@@ -1096,3 +1096,127 @@ body {
   .mode-switch-inner { gap: 8px; }
   .gh-stats { gap: 8px; }
 }
+
+/* ========== 通用涨跌色 ========== */
+.up { color: var(--color-up); }
+.down { color: var(--color-down); }
+.neutral { color: var(--text-light); }
+
+/* ========== 全局大势量化面板（模块1, 置顶） ========== */
+#globalTrend { max-width: 1200px; margin: 16px auto 0; padding: 0 20px; }
+.global-trend { background: linear-gradient(135deg, #ffffff, #f7faff); border: 1px solid var(--border-color); border-left: 5px solid var(--accent-blue); border-radius: var(--radius-md); padding: 16px 20px; box-shadow: var(--shadow-sm); }
+.global-trend.extreme { border-left-color: #c0392b; background: linear-gradient(135deg, #fff, #fdecee); }
+.gt-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.gt-title { font-size: 17px; font-weight: 800; color: var(--text-primary); }
+.gt-tp { font-size: 12px; color: var(--text-light); }
+.gt-extreme-banner { margin: 10px 0 4px; padding: 8px 12px; background: #c0392b; color: #fff; border-radius: 8px; font-size: 13px; font-weight: 700; text-align: center; }
+.gt-grid { display: grid; grid-template-columns: 1.1fr 1.2fr 1.2fr 1.5fr; gap: 12px; margin: 12px 0; }
+.gt-cell { background: #fff; border: 1px solid var(--border-color); border-radius: 10px; padding: 12px 14px; }
+.gt-main { display: flex; flex-direction: column; justify-content: center; }
+.gt-label { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+.gt-value { font-size: 30px; font-weight: 800; line-height: 1.1; }
+.gt-value-sm { font-size: 16px; font-weight: 700; color: var(--text-primary); margin-top: 4px; }
+.gt-value-sm2 { font-size: 13px; color: var(--text-secondary); }
+.gt-bar { height: 8px; background: #eee; border-radius: 4px; margin-top: 8px; overflow: hidden; }
+.gt-bar span { display: block; height: 100%; border-radius: 4px; }
+.gt-sectors { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 4px 0 10px; }
+.gt-sector { background: #fff; border: 1px solid var(--border-color); border-radius: 10px; padding: 12px 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; align-items: center; }
+.gt-sector.kc { border-left: 4px solid var(--accent-purple); }
+.gt-sector.bd { border-left: 4px solid var(--accent-blue); }
+.gts-name { font-weight: 700; font-size: 14px; grid-column: 1 / 3; }
+.gts-risk { font-size: 18px; font-weight: 800; }
+.gts-bear { font-size: 13px; color: var(--text-secondary); }
+.gts-stage { font-size: 13px; font-weight: 600; color: var(--text-primary); grid-column: 1 / 3; }
+.gts-dur { font-size: 12px; color: var(--text-secondary); grid-column: 1 / 3; }
+.gts-dur span { color: var(--text-light); }
+.gt-factors { font-size: 12px; color: var(--text-secondary); line-height: 1.8; }
+.gf-factor { display: inline-block; margin: 2px 8px 2px 0; padding: 2px 8px; border-radius: 12px; font-size: 11px; }
+.gf-factor.pos { background: #eafaf1; color: var(--color-up); }
+.gf-factor.neg { background: #fdecee; color: var(--color-down); }
+.gt-note { font-size: 11px; color: var(--text-light); margin-top: 8px; border-top: 1px dashed var(--border-color); padding-top: 8px; }
+
+/* ========== 4时点导航（模块4） ========== */
+.timepoint-nav { max-width: 1200px; margin: 14px auto 0; padding: 0 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.tp-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 10px 14px; cursor: pointer; text-align: left; transition: all .15s; box-shadow: var(--shadow-sm); }
+.tp-btn:hover { border-color: var(--accent-blue); }
+.tp-btn.active { border-color: var(--accent-blue); background: linear-gradient(135deg, #fff, #eef6fd); box-shadow: 0 4px 14px rgba(52,152,219,.18); }
+.tp-btn b { font-size: 14px; color: var(--text-primary); }
+.tp-btn i { font-size: 11px; color: var(--text-light); font-style: normal; }
+
+/* ========== 分组阈值说明栏（模块2） ========== */
+.threshold-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0 4px; padding: 10px 14px; background: #f6f9ff; border: 1px solid #d6e4ff; border-radius: 10px; font-size: 12px; }
+.threshold-title { font-weight: 700; color: var(--accent-blue); margin-right: 4px; }
+.threshold-item { background: #fff; border: 1px solid #e0e8f5; border-radius: 14px; padding: 3px 10px; color: var(--text-secondary); }
+
+/* ========== 微观大势单元格 / 详情（模块1.3） ========== */
+.gt-micro { font-size: 12px; }
+.micro-stage { display: block; font-weight: 700; font-size: 13px; }
+.micro-bear { display: block; color: var(--text-secondary); font-size: 11px; }
+.micro-block { display: inline-block; margin-top: 2px; padding: 1px 6px; border-radius: 6px; background: #fdecee; color: #c0392b; font-size: 10px; font-weight: 700; }
+.micro-trend-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 16px 18px; box-shadow: var(--shadow-sm); margin-top: 12px; }
+.mt-main { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.mt-stage { font-size: 18px; font-weight: 800; }
+.mt-bear { font-size: 13px; color: var(--text-secondary); }
+.mt-bear b { color: var(--text-primary); font-size: 15px; }
+.mt-risk { color: #fff; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.mt-block { padding: 3px 10px; border-radius: 8px; background: #fdecee; color: #c0392b; font-size: 12px; font-weight: 700; }
+.mt-row { margin-top: 10px; font-size: 13px; color: var(--text-secondary); }
+.mt-row b { color: var(--text-primary); }
+.mt-factors { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.mt-factor { font-size: 11px; padding: 2px 8px; border-radius: 12px; }
+.mt-factor.pos { background: #eafaf1; color: var(--color-up); }
+.mt-factor.neg { background: #fdecee; color: var(--color-down); }
+.mt-note { font-size: 11px; color: var(--text-light); margin-top: 8px; }
+
+/* ========== 基金长期核心指标（模块3） ========== */
+.fl-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
+.fl-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px 14px; box-shadow: var(--shadow-sm); }
+.fl-label { font-size: 12px; color: var(--text-secondary); }
+.fl-value { font-size: 17px; font-weight: 700; color: var(--text-primary); margin-top: 4px; }
+.fl-sub { font-size: 11px; color: var(--text-light); font-weight: 400; margin-left: 4px; }
+.fl-guidance { margin-top: 12px; padding: 10px 14px; border-radius: 10px; font-size: 13px; font-weight: 600; border-left: 4px solid; }
+.fl-guidance.up { background: #eafaf1; color: var(--color-up); border-color: var(--color-up); }
+.fl-guidance.down { background: #fdecee; color: var(--color-down); border-color: var(--color-down); }
+.fl-guidance.neutral { background: #f0f2f5; color: var(--text-secondary); border-color: var(--text-light); }
+.fl-mini { margin-top: 10px; padding: 8px 12px; background: #fff3e0; color: #b7950b; border: 1px solid #ffe0a0; border-radius: 8px; font-size: 12px; font-weight: 600; }
+
+/* ========== 4时点独立面板内容（模块4） ========== */
+.tp-head { display: flex; align-items: center; gap: 10px; margin: 8px 0 12px; }
+.tp-icon { font-size: 22px; }
+.tp-head h2 { font-size: 18px; font-weight: 800; color: var(--text-primary); }
+.tp-extreme { margin-left: auto; padding: 4px 12px; background: #c0392b; color: #fff; border-radius: 8px; font-size: 13px; font-weight: 700; }
+.tp-extreme-banner { padding: 10px 14px; background: #c0392b; color: #fff; border-radius: 10px; font-size: 14px; font-weight: 700; text-align: center; margin-bottom: 12px; }
+.tp-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+.tp-scell { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px 14px; text-align: center; box-shadow: var(--shadow-sm); }
+.tp-scell span { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+.tp-scell b { font-size: 18px; }
+.tp-section-title { font-size: 14px; font-weight: 700; color: var(--text-primary); margin: 14px 0 8px; border-left: 4px solid var(--accent-teal); padding-left: 10px; }
+.tp-group { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; box-shadow: var(--shadow-sm); }
+.tp-group-head { font-size: 14px; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+.tp-concl { margin-left: auto; font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 12px; }
+.tp-concl.avoid { background: #fdecee; color: #c0392b; }
+.tp-concl.low { background: #eafaf1; color: var(--color-up); }
+.tp-concl.wait { background: #f0f2f5; color: var(--text-secondary); }
+.tp-table-wrap { overflow-x: auto; }
+.tp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tp-table th { background: #f6f8fa; color: var(--text-secondary); font-weight: 700; padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border-color); }
+.tp-table td { padding: 7px 10px; border-bottom: 1px solid #f0f0f0; }
+.tp-noon-row { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: var(--text-secondary); align-items: center; }
+.tp-noon-row b { color: var(--text-primary); }
+.tp-plan { color: var(--accent-orange); }
+.tp-plan-desc { font-size: 12px; color: var(--text-light); margin-top: 4px; }
+.tp-changed { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 10px; background: #fdecee; color: #c0392b; }
+.tp-reverse-banner { padding: 12px 16px; background: #c0392b; color: #fff; border-radius: 10px; font-size: 15px; font-weight: 800; text-align: center; margin-bottom: 14px; box-shadow: var(--shadow-md); }
+
+/* ========== 持仓解锁弹窗（模块6） ========== */
+.unlock-modal { max-width: 520px; }
+.unlock-modal h2 { font-size: 18px; margin-bottom: 10px; }
+.pnl-detail-item.next-day { background: #fff7e6; border-color: #ffe0a0; }
+
+@media (max-width: 900px) {
+  .gt-grid { grid-template-columns: 1fr 1fr; }
+  .gt-sectors { grid-template-columns: 1fr; }
+  .timepoint-nav { grid-template-columns: 1fr 1fr; }
+  .tp-summary { grid-template-columns: 1fr 1fr; }
+  .fl-grid { grid-template-columns: 1fr; }
+}
