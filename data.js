@@ -311,6 +311,7 @@ const SEED_NEW_ETFS = [
 
 (function buildSeedEtfs() {
   SEED_NEW_ETFS.forEach(s => {
+    if (QUOTE_DATA[s.code]) return; // 自动化已写入真实数据则保留，不覆盖
     const rng = _mulberry32(_hashStr(s.code));
     QUOTE_DATA[s.code] = {
       name: s.name, price: s.price, change: +(s.price - s.preClose).toFixed(3), changePct: s.changePct,
@@ -418,7 +419,7 @@ function generateKlineData(code) {
   return data;
 }
 const KLINE_DATA = {};
-ALL_CODES.forEach(code => { KLINE_DATA[code] = generateKlineData(code); });
+ALL_CODES.forEach(code => { if (!KLINE_DATA[code]) KLINE_DATA[code] = generateKlineData(code); });
 
 function aggregateIntraday(daily, periodMin) {
   const bars = Math.floor(240 / periodMin);
