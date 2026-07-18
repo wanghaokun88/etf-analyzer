@@ -99,8 +99,8 @@ const ALL_CODES = (() => {
 })();
 
 // ---------- 6. 持仓成本价(可编辑占位) ----------
-// ⚠️ 占位示例：请把 cost 改成的真实买入成本价(元)、shares 改成的真实持有份额(份)
-//    改完后把 configured 改为 true，分组1 才会显示真实盈亏/止损止盈/减仓提示
+// ⚠️ 占位示例：真实成本价可在网页右上角「设置持仓成本」直接填写（存浏览器 localStorage，优先于此处）
+//    也可在此把 cost/shares 改成真实值、并把 configured 改为 true，分组1 才会显示真实盈亏/止损止盈/减仓提示
 const MY_HOLDINGS = {
   configured: false,
   sh513310: { cost: 1.214, shares: 10000 },
