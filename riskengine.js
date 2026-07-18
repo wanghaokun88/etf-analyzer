@@ -13,17 +13,37 @@ const RiskEngine = (function () {
     try { return TechnicalEngine.getTechnicalSignals(code); } catch (e) { return null; }
   }
 
-  // 持仓盈亏 / 止损止盈 (分组1专用)
-  function getHoldingPnl(code) {
+  // 组合占比(分组1): 持仓市值 / 总市值
+  function getPortfolio() {
+    if (!MY_HOLDINGS.configured) return null;
+    const items = {}; let total = 0;
+    ETF_GROUPS.holdings.codes.forEach(code => {
+      const h = MY_HOLDINGS[code]; if (!h) return;
+      const val = QUOTE_DATA[code].price * h.shares;
+      items[code] = { value: val, weight: 0 };
+      total += val;
+    });
+    if (total <= 0) return null;
+    ETF_GROUPS.holdings.codes.forEach(code => { if (items[code]) items[code].weight = items[code].value / total * 100; });
+    return { total, items };
+  }
+
+  // 持仓盈亏 / 止损止盈 / 仓位占比 (分组1专用)
+  function getHoldingPnl(code, weight) {
     if (!MY_HOLDINGS.configured) return null;
     const h = MY_HOLDINGS[code];
     if (!h) return null;
     const q = QUOTE_DATA[code];
     const profit = (q.price - h.cost) * h.shares;
     const profitPct = (q.price - h.cost) / h.cost * 100;
+    const w = (weight != null) ? weight : (() => {
+      const pf = getPortfolio(); return pf && pf.items[code] ? pf.items[code].weight : null;
+    })();
     return {
       configured: true, cost: h.cost, shares: h.shares,
       profit, profitPct,
+      marketValue: Math.round(q.price * h.shares),
+      weight: w,
       stopLoss: +(h.cost * (1 + T.holding.stopLossPct / 100)).toFixed(3),
       takeProfit: +(h.cost * (1 + T.holding.takeProfitPct / 100)).toFixed(3),
       addOnDip: +(h.cost * (1 + T.holding.addOnDipPct / 100)).toFixed(3)
@@ -111,6 +131,88 @@ const RiskEngine = (function () {
     return { score, signals };
   }
 
+  // ---------- 分组1·持仓专属: 短线波段评分 ----------
+  // 权重: 持仓浮盈浮亏/折溢价/日内资金/流动性 75% + 估值/长期规模 25%
+  function evalHoldingShortTerm(code, pf) {
+    const q = QUOTE_DATA[code], f = FUND_FLOW[code], iopv = IOPV_DATA[code], d = ETF_DETAIL[code], v = VALUATION_DATA[code], qd = QUARTERLY_DATA[code];
+    const st = T.shortTerm, h = T.holding;
+    const pnl = getHoldingPnl(code, pf && pf.items[code] ? pf.items[code].weight : null);
+    const profitPct = pnl ? pnl.profitPct : 0;
+
+    const pnlScore = profitPct >= 20 ? 82 : profitPct >= 0 ? 66 : profitPct >= h.stopLossPct ? 50 : profitPct >= h.lossDeep ? 36 : 22;
+    const premScore = iopv.premiumDeviation > st.premium.arb ? 35 : d.premiumRate > 0 ? 55 : 68;
+    const flowScore = f.mainNetInflow >= st.mainFlow.strongIn ? 80 : f.mainNetInflow >= 0 ? 62 : f.mainNetInflow >= st.mainFlow.strongOut ? 44 : 26;
+    const liqScore = q.turnover >= 5 ? 76 : q.turnover >= 2 ? 66 : q.turnover >= 1 ? 56 : 44;
+    const valScore = v.pePercentile <= 30 ? 82 : v.pePercentile >= 70 ? 32 : 55;
+    const scaleScore = qd.aumChangePct >= 10 ? 80 : qd.aumChangePct >= 0 ? 60 : 40;
+
+    const score = clamp(pnlScore * 0.30 + premScore * 0.15 + flowScore * 0.15 + liqScore * 0.15 + valScore * 0.15 + scaleScore * 0.10, 0, 100);
+    const signals = [
+      { dim: "持仓浮盈浮亏", value: pnl ? `${profitPct >= 0 ? '+' : ''}${profitPct.toFixed(1)}%` : "—", status: statusOf(profitPct >= 0, profitPct <= h.lossDeep), note: pnl ? `现价${q.price}较成本${pnl.cost}浮${profitPct >= 0 ? '盈' : '亏'}${Math.abs(profitPct).toFixed(1)}%` : "未配置成本" },
+      { dim: "折溢价", value: `${d.premiumRate >= 0 ? '+' : ''}${d.premiumRate}%`, status: statusOf(d.premiumRate <= 0, iopv.premiumDeviation > st.premium.arb), note: iopv.premiumDeviation > st.premium.arb ? "偏离超0.5%异常" : "折溢价合理" },
+      { dim: "日内资金", value: `${f.mainNetInflow.toFixed(2)}亿`, status: statusOf(f.mainNetInflow >= st.mainFlow.strongIn, f.mainNetInflow < st.mainFlow.strongOut), note: f.mainNetInflow >= 0 ? "主力净流入" : "主力净流出" },
+      { dim: "流动性(换手)", value: `${q.turnover}%`, status: statusOf(q.turnover >= 2, q.turnover < 1), note: q.turnover >= 2 ? "交投活跃" : "流动性偏弱" },
+      { dim: "估值分位", value: `PE${v.pePercentile}%`, status: statusOf(v.pePercentile <= 30, v.pePercentile >= 70), note: v.pePercentile >= 70 ? "估值偏贵" : "估值中性偏低" },
+      { dim: "规模增长", value: `${qd.aumChangePct >= 0 ? '+' : ''}${qd.aumChangePct}%`, status: statusOf(qd.aumChangePct >= 10, qd.aumChangePct < 0), note: qd.aumChangePct >= 0 ? "份额净流入" : "份额萎缩" }
+    ];
+    return { score, signals };
+  }
+
+  // ---------- 分组1·持仓专属: 长期定投评分 ----------
+  // 权重: 估值分位/跟踪误差/费率/规模 70% + 日内波动/短期溢价 30%
+  function evalHoldingLongTerm(code, pf) {
+    const d = ETF_DETAIL[code], qd = QUARTERLY_DATA[code], v = VALUATION_DATA[code], f = FUND_FLOW[code], iopv = IOPV_DATA[code], q = QUOTE_DATA[code];
+    const lt = T.longTerm, st = T.shortTerm;
+    const fee = (typeof FEE_RATE !== 'undefined' && FEE_RATE[code] != null) ? FEE_RATE[code] : 0.5;
+
+    const valScore = (v.pePercentile <= lt.pePercentile.cheap && v.pbPercentile <= lt.pbPercentile.cheap) ? 85 : (v.pePercentile >= lt.pePercentile.expensive) ? 30 : 55;
+    const teScore = qd.trackError <= lt.trackError.ok ? 78 : qd.trackError <= 1.0 ? 58 : 42;
+    const feeScore = fee <= 0.30 ? 85 : fee <= 0.50 ? 70 : fee <= 0.80 ? 55 : 40;
+    const scaleScore = qd.aumChangePct >= lt.scaleGrowth.strong ? 80 : qd.aumChangePct >= 0 ? 60 : 40;
+    const volScore = Math.abs(q.changePct) <= 2 ? 60 : Math.abs(q.changePct) <= 5 ? 50 : 40;
+    const premScore = iopv.premiumDeviation > st.premium.arb ? 35 : d.premiumRate > 0 ? 55 : 68;
+
+    const score = clamp(valScore * 0.30 + teScore * 0.15 + feeScore * 0.15 + scaleScore * 0.10 + volScore * 0.15 + premScore * 0.15, 0, 100);
+    const signals = [
+      { dim: "估值分位(PE/PB)", value: `PE${v.pePercentile}%/PB${v.pbPercentile}%`, status: statusOf(v.pePercentile <= lt.pePercentile.cheap && v.pbPercentile <= lt.pbPercentile.cheap, v.pePercentile >= lt.pePercentile.expensive), note: v.pePercentile <= 30 ? "历史低位, 定投安全边际高" : v.pePercentile >= 70 ? "估值偏贵" : "估值中性" },
+      { dim: "跟踪误差", value: `${qd.trackError}%`, status: statusOf(qd.trackError <= lt.trackError.ok, qd.trackError > 1.0), note: qd.trackError <= lt.trackError.ok ? "跟踪质量好" : "跟踪误差偏高" },
+      { dim: "年费率", value: `${fee}%`, status: statusOf(fee <= 0.30, fee > 0.80), note: fee <= 0.30 ? "低费率优势" : fee > 0.80 ? "费率偏高" : "费率适中" },
+      { dim: "规模增长", value: `${qd.aumChangePct >= 0 ? '+' : ''}${qd.aumChangePct}%`, status: statusOf(qd.aumChangePct >= lt.scaleGrowth.strong, qd.aumChangePct < 0), note: qd.aumChangePct >= 0 ? "份额净流入" : "份额萎缩" },
+      { dim: "日内波动", value: `${q.changePct >= 0 ? '+' : ''}${q.changePct}%`, status: "neutral", note: Math.abs(q.changePct) <= 2 ? "波动小, 定投平稳" : "波动较大" },
+      { dim: "短期溢价", value: `${d.premiumRate >= 0 ? '+' : ''}${d.premiumRate}%`, status: statusOf(d.premiumRate <= 0, iopv.premiumDeviation > st.premium.arb), note: iopv.premiumDeviation > st.premium.arb ? "偏离超0.5%异常" : "折溢价合理" }
+    ];
+    return { score, signals };
+  }
+
+  // ---------- 分组1·持仓风险判定条件(①②③) ----------
+  function evalHoldingRules(code, ev, pf) {
+    const flags = [], advices = []; let gradeOverride = null;
+    const pnl = ev.pnl; if (!pnl) return { flags, advices, gradeOverride };
+    const h = T.holding, st = T.shortTerm;
+    const v = VALUATION_DATA[code], f = FUND_FLOW[code], d = ETF_DETAIL[code], iopv = IOPV_DATA[code];
+
+    // ① 浮亏>15% + (指数高位溢价 / 资金连续流出) → 深红预警, 分批止损减仓
+    const highPremium = v.pePercentile >= h.valuationWarnPct || iopv.premiumDeviation > st.premium.arb;
+    const outflow = f.mainNetInflow < 0;
+    if (pnl.profitPct < h.lossDeep && highPremium && outflow) {
+      flags.push({ level: "deep-red", label: "深红预警", text: `浮亏${pnl.profitPct.toFixed(1)}%>15% + 估值分位${v.pePercentile}%高位/溢价异常 + 主力净流出${f.mainNetInflow.toFixed(2)}亿` });
+      gradeOverride = "deep-red";
+      advices.push({ priority: "high", action: `分批止损减仓 ${ev.name}`, logic: `浮亏${pnl.profitPct.toFixed(1)}%已跌破-15%阈值, 且指数估值分位${v.pePercentile}%偏高/折溢价偏离, 主力净流出${f.mainNetInflow.toFixed(2)}亿, 风险集中释放, 建议分批止损减仓` });
+    }
+    // ② 浮盈>20% + 估值历史80%分位以上 → 黄色提示, 分批止盈
+    if (pnl.profitPct > h.profitWarn && v.pePercentile > h.valuationWarnPct) {
+      flags.push({ level: "yellow", label: "止盈提示", text: `浮盈${pnl.profitPct.toFixed(1)}%>20% + 估值分位${v.pePercentile}%>80%` });
+      if (gradeOverride !== "deep-red") gradeOverride = "yellow";
+      advices.push({ priority: "high", action: `分批止盈 ${ev.name}`, logic: `浮盈${pnl.profitPct.toFixed(1)}%超+20%, 且跟踪指数PE分位${v.pePercentile}%>80%处历史高位, 上方空间有限, 建议分批止盈锁定利润` });
+    }
+    // ③ 单只仓位超过总资金30% → 自动标注【仓位过重】, 提示分散
+    if (pnl.weight != null && pnl.weight > h.weightHeavy) {
+      flags.push({ level: "info", label: "仓位过重", text: `占总仓位${pnl.weight.toFixed(1)}%>30%, 建议分散` });
+      advices.push({ priority: "mid", action: `分散减仓 ${ev.name}`, logic: `该ETF占组合${pnl.weight.toFixed(1)}%>30%, 单一标的过重, 建议减仓分散至其他赛道/宽基, 降低非系统性风险` });
+    }
+    return { flags, advices, gradeOverride };
+  }
+
   // ---------- 评级映射 + 安全覆盖 ----------
   function gradeFromScore(score, code) {
     const q = QUOTE_DATA[code], iopv = IOPV_DATA[code], f = FUND_FLOW[code], st = T.shortTerm;
@@ -127,7 +229,7 @@ const RiskEngine = (function () {
   }
 
   // ---------- 生成可落地建议(每条带数据逻辑) ----------
-  function buildAdvices(code, ev, mode, groupId) {
+  function buildAdvices(code, ev, mode, groupId, extraAdvices) {
     const q = QUOTE_DATA[code], f = FUND_FLOW[code], iopv = IOPV_DATA[code], v = VALUATION_DATA[code], qd = QUARTERLY_DATA[code], m = MARGIN_DATA[code], nb = NORTHBOUND_DATA[code];
     const name = q.name, price = q.price;
     const advices = [];
@@ -151,6 +253,9 @@ const RiskEngine = (function () {
       }
     }
 
+    // 持仓规则①②③ 的强制建议(深红止损/黄色止盈/仓位过重) 优先并入
+    if (extraAdvices && extraAdvices.length) extraAdvices.forEach(a => advices.push(a));
+
     if (mode === "shortTerm") {
       if (q.suspended) advices.push({ priority: "high", action: `暂停 ${name} 交易`, logic: `该ETF暂停申购赎回, 场内流动性风险高, 暂不操作` });
       if (tech && tech.rsiZone === "超卖") advices.push({ priority: "mid", action: `小仓博反弹 ${name}`, logic: `RSI(14)=${tech.rsiValue?.toFixed(1)}进入超卖区(<30), 技术性反弹概率增大` });
@@ -172,6 +277,9 @@ const RiskEngine = (function () {
       if (qd.dividendYield > 0) advices.push({ priority: "low", action: `红利再投 ${name}`, logic: `股息率${qd.dividendYield}%, 可提供现金流用于红利再投资` });
     }
 
+    // 规则⑤ 同赛道对比: 弱标的切换至同组优质标的
+    if (ev.sectorWeak) advices.push({ priority: "mid", action: `换仓至${ev.sectorBest}`, logic: `同赛道「${ev.sectorName}」持仓中, 本标的估值分位高于${ev.sectorBest}, 性价比偏弱, 可切换至同组更优标的` });
+
     // 两融 / 北向 作为补充观察(两条模式通用)
     if (m.change5d <= -3) advices.push({ priority: "low", action: `关注两融降温 ${name}`, logic: `融资余额5日变动${m.change5d}%(<-3%), 杠杆资金撤退, 动能减弱` });
     if (nb.netBuy5d <= -1) advices.push({ priority: "low", action: `留意北向流出 ${name}`, logic: `北向5日净买${nb.netBuy5d}亿(<=-1亿), 外资边际走弱` });
@@ -179,7 +287,7 @@ const RiskEngine = (function () {
     // 风险等级总建议
     const gradeKey = ev.grade;
     const gradeAdvice = {
-      green: { priority: "high", action: `机会加仓 ${name}`, logic: `综合风险评级「绿-机会加仓」, 多维信号偏多, 可伺机加仓` },
+      green: groupId === "holdings" ? { priority: "high", action: `加仓补仓 ${name}`, logic: `综合风险评级「绿-机会加仓」, 现有持仓信号偏多, 可逢低加仓补仓摊薄成本(不建议无底线新开仓)` } : { priority: "high", action: `机会加仓 ${name}`, logic: `综合风险评级「绿-机会加仓」, 多维信号偏多, 可伺机加仓` },
       yellow: { priority: "high", action: `短线博弈 ${name}`, logic: `综合风险评级「黄-短线博弈」, 信号中性, 轻仓快进快出` },
       "light-red": { priority: "high", action: `观望换仓 ${name}`, logic: `综合风险评级「浅红-观望换仓」, 信号转弱, 减仓或调仓至更强标的` },
       "deep-red": { priority: "high", action: `立即减仓清仓 ${name}`, logic: `综合风险评级「深红-立即减仓清仓」, 风险集中释放, 优先控制仓位` }
@@ -198,8 +306,15 @@ const RiskEngine = (function () {
 
   // ---------- 对外: 单只评估 ----------
   function evaluate(code, mode, groupId) {
-    const base = mode === "shortTerm" ? evalShortTerm(code) : evalLongTerm(code);
-    const gradeKey = gradeFromScore(base.score, code);
+    const isHolding = groupId === "holdings";
+    const pf = isHolding ? getPortfolio() : null;
+    const weight = (pf && pf.items[code]) ? pf.items[code].weight : null;
+
+    const base = isHolding
+      ? (mode === "shortTerm" ? evalHoldingShortTerm(code, pf) : evalHoldingLongTerm(code, pf))
+      : (mode === "shortTerm" ? evalShortTerm(code) : evalLongTerm(code));
+
+    let gradeKey = gradeFromScore(base.score, code);
     const g = RISK_GRADES[gradeKey];
     const ev = {
       code, name: QUOTE_DATA[code].name, fullCode: (ETF_META[code] || {}).fullCode || code,
@@ -209,8 +324,34 @@ const RiskEngine = (function () {
       grade: gradeKey, gradeLabel: g.label, gradeAction: g.action, gradeColor: g.color, gradeBg: g.bg,
       signals: base.signals
     };
-    ev.advices = buildAdvices(code, ev, mode, groupId);
-    if (groupId === "holdings") ev.pnl = getHoldingPnl(code);
+
+    let holdingFlags = [], extraAdvices = null;
+    if (isHolding) {
+      ev.pnl = getHoldingPnl(code, weight);
+      ev.portfolio = { total: pf ? pf.total : 0, weight: weight };
+      // 持仓规则 ①②③
+      const rules = evalHoldingRules(code, ev, pf);
+      holdingFlags = rules.flags; extraAdvices = rules.advices;
+      if (rules.gradeOverride) {
+        gradeKey = rules.gradeOverride;
+        ev.grade = gradeKey; ev.gradeLabel = RISK_GRADES[gradeKey].label;
+        ev.gradeAction = RISK_GRADES[gradeKey].action; ev.gradeColor = RISK_GRADES[gradeKey].color; ev.gradeBg = RISK_GRADES[gradeKey].bg;
+      }
+      // 规则⑤ 同赛道对比(多只同赛道持仓, 提示弱标的切换至优质标的)
+      if (typeof HOLDING_SECTOR !== 'undefined' && HOLDING_SECTOR[code]) {
+        const peers = ETF_GROUPS.holdings.codes.filter(c => HOLDING_SECTOR[c] === HOLDING_SECTOR[code] && c !== code);
+        if (peers.length) {
+          const best = peers.reduce((b, c) => VALUATION_DATA[c].pePercentile < VALUATION_DATA[b].pePercentile ? c : b, peers[0]);
+          const worst = peers.reduce((w, c) => VALUATION_DATA[c].pePercentile > VALUATION_DATA[w].pePercentile ? c : w, peers[0]);
+          if (VALUATION_DATA[code].pePercentile >= VALUATION_DATA[worst].pePercentile && VALUATION_DATA[code].pePercentile > VALUATION_DATA[best].pePercentile) {
+            ev.sectorWeak = true; ev.sectorName = HOLDING_SECTOR[code]; ev.sectorBest = QUOTE_DATA[best].name;
+            holdingFlags.push({ level: "info", label: "同赛道偏弱", text: `同赛道${HOLDING_SECTOR[code]}中估值分位最高, 建议切换至${QUOTE_DATA[best].name}` });
+          }
+        }
+      }
+    }
+    ev.holdingFlags = holdingFlags;
+    ev.advices = buildAdvices(code, ev, mode, groupId, extraAdvices);
     return ev;
   }
 
@@ -232,5 +373,5 @@ const RiskEngine = (function () {
     return { group, items, avgScore: Math.round(avgScore), groupGrade, deepRed, green, count: items.length };
   }
 
-  return { evaluate, evaluateGroup, getHoldingPnl, RISK_GRADES, THRESHOLDS };
+  return { evaluate, evaluateGroup, getHoldingPnl, getPortfolio, RISK_GRADES, THRESHOLDS };
 })();
