@@ -32,92 +32,240 @@ document.addEventListener('DOMContentLoaded', () => {
   renderDataArchitecture();
 });
 
-// ========== 持仓成本价(本地) ==========
+// ========== 持仓管理(本地: 增删标的 / 加仓减仓 / 改成本) ==========
+const DEFAULT_HOLDING_CODES = ETF_GROUPS.holdings.codes.slice();
+let workingHoldings = null; // code -> {cost, shares} 编辑中工作副本
+
 function loadHoldingsFromStorage() {
   try {
     const raw = localStorage.getItem(HOLDINGS_KEY);
     if (!raw) return;
     const data = JSON.parse(raw);
     if (!data || typeof data !== 'object') return;
+    const storedCodes = Array.isArray(data.codes)
+      ? data.codes
+      : Object.keys(data).filter(k => k !== 'version' && k !== 'configured');
+    const items = data.items || (() => {
+      const o = {};
+      storedCodes.forEach(c => { if (data[c] && typeof data[c].cost === 'number') o[c] = data[c]; });
+      return o;
+    })();
+    ETF_GROUPS.holdings.codes.length = 0;
     let any = false;
-    ETF_GROUPS.holdings.codes.forEach(code => {
-      const h = data[code];
-      if (h && typeof h.cost === 'number' && typeof h.shares === 'number') {
-        MY_HOLDINGS[code] = { cost: h.cost, shares: h.shares };
+    storedCodes.forEach(c => {
+      const it = items[c];
+      if (QUOTE_DATA[c] && it && typeof it.cost === 'number' && typeof it.shares === 'number') {
+        ETF_GROUPS.holdings.codes.push(c);
+        MY_HOLDINGS[c] = { cost: it.cost, shares: it.shares };
         any = true;
       }
     });
-    if (any) MY_HOLDINGS.configured = true;
+    MY_HOLDINGS.configured = any;
   } catch (e) { /* 损坏的存储直接忽略 */ }
 }
+
+function ensureWorking() {
+  if (workingHoldings) return;
+  workingHoldings = {};
+  ETF_GROUPS.holdings.codes.forEach(code => {
+    const h = MY_HOLDINGS[code];
+    if (h) workingHoldings[code] = { cost: h.cost, shares: h.shares };
+  });
+}
+
+function heFlushInputs() {
+  if (!workingHoldings) return;
+  Object.keys(workingHoldings).forEach(code => {
+    const cEl = document.getElementById('cost_' + code);
+    const sEl = document.getElementById('shares_' + code);
+    if (!cEl || !sEl) return;
+    const c = parseFloat(cEl.value), s = parseFloat(sEl.value);
+    if (cEl.value === '' && sEl.value === '') return; // 留空 = 不动
+    if (!isNaN(c) && !isNaN(s) && c > 0 && s >= 0) workingHoldings[code] = { cost: +c.toFixed(3), shares: Math.round(s) };
+  });
+}
+
+function heCommit(msg) {
+  const codes = Object.keys(workingHoldings);
+  ETF_GROUPS.holdings.codes.length = 0;
+  codes.forEach(c => ETF_GROUPS.holdings.codes.push(c));
+  Object.keys(MY_HOLDINGS).forEach(k => { if (k !== 'configured') delete MY_HOLDINGS[k]; });
+  codes.forEach(c => { MY_HOLDINGS[c] = { cost: workingHoldings[c].cost, shares: workingHoldings[c].shares }; });
+  MY_HOLDINGS.configured = codes.length > 0;
+  const payload = { version: 1, codes, items: workingHoldings, configured: MY_HOLDINGS.configured };
+  try { localStorage.setItem(HOLDINGS_KEY, JSON.stringify(payload)); } catch (e) {}
+  updateHoldingsBtn();
+  renderGroupNav();
+  renderGroup(currentGroup, currentMode);
+  if (msg) setHeMsg(msg, '#27ae60');
+}
+
+function setHeMsg(t, color) { const m = document.getElementById('heMsg'); if (m) { m.textContent = t; m.style.color = color || '#27ae60'; } }
 
 function updateHoldingsBtn() {
   const b = document.getElementById('btnEditHoldings');
   if (!b) return;
   b.classList.toggle('configured', !!MY_HOLDINGS.configured);
-  b.textContent = MY_HOLDINGS.configured ? '⚙️ 持仓成本已配置' : '⚙️ 设置持仓成本';
+  b.textContent = MY_HOLDINGS.configured ? '⚙️ 持仓管理·已配置' : '⚙️ 持仓管理';
 }
 
 function openHoldingsEditor() {
+  ensureWorking();
   const box = document.getElementById('holdingsEditor');
-  const rows = ETF_GROUPS.holdings.codes.map(code => {
+  const held = Object.keys(workingHoldings);
+  const pf = RiskEngine.getPortfolio();
+  const rows = held.map(code => {
     const name = QUOTE_DATA[code].name, price = QUOTE_DATA[code].price;
-    const cur = MY_HOLDINGS[code];
-    const cost = (cur && typeof cur.cost === 'number') ? cur.cost : '';
-    const shares = (cur && typeof cur.shares === 'number') ? cur.shares : '';
+    const h = workingHoldings[code];
+    const pnlPct = (price - h.cost) / h.cost * 100;
+    const cls = pnlPct >= 0 ? 'up' : 'down';
+    const w = pf && pf.items[code] ? pf.items[code].weight : null;
+    const wTxt = w != null ? w.toFixed(1) + '%' : '-';
     return `<tr>
       <td class="he-name">${name}<span class="he-code">${code}</span></td>
       <td class="he-price">${price}</td>
-      <td><input type="number" class="he-input" id="cost_${code}" placeholder="买入价" step="0.001" min="0" value="${cost}"></td>
-      <td><input type="number" class="he-input" id="shares_${code}" placeholder="份额" step="1" min="0" value="${shares}"></td>
-    </tr>`;
+      <td class="he-pnl ${cls}">${fmtPct(pnlPct)}</td>
+      <td class="he-weight">${wTxt}</td>
+      <td><input type="number" class="he-input" id="cost_${code}" placeholder="买入价" step="0.001" min="0" value="${h.cost}"></td>
+      <td><input type="number" class="he-input" id="shares_${code}" placeholder="份额" step="1" min="0" value="${h.shares}"></td>
+      <td class="he-ops">
+        <button class="he-mini he-add" onclick="heShowSub('${code}','add')">加仓</button>
+        <button class="he-mini he-red" onclick="heShowSub('${code}','reduce')">减仓</button>
+        <button class="he-mini he-del" onclick="heRemove('${code}')">移除</button>
+      </td>
+    </tr>
+    <tr class="he-subrow" id="sub_${code}" style="display:none"><td colspan="7"></td></tr>`;
   }).join('');
+  const avail = ALL_CODES.filter(c => !workingHoldings[c]);
+  const opts = avail.length
+    ? avail.map(c => `<option value="${c}">${QUOTE_DATA[c].name}（${c}）</option>`).join('')
+    : '<option value="">无可用标的</option>';
   box.innerHTML = `
-    <h2 style="margin:0 0 4px">设置持仓成本价</h2>
-    <p class="he-sub">数据仅保存在本浏览器（localStorage），不上传任何服务器。周一拿到真实买入价与份额后填这里即可，分组1 立即显示真实盈亏 / 止损止盈 / 减仓提示。</p>
+    <h2 style="margin:0 0 4px">持仓管理</h2>
+    <p class="he-sub">数据仅保存在本浏览器（localStorage），不上传任何服务器。可增删标的、加仓 / 减仓、修改成本与份额。改成本 / 份额后点「保存全部」；加仓 / 减仓 / 移除 / 添加即时生效。</p>
+    ${held.length ? `
     <table class="he-table">
-      <thead><tr><th>ETF</th><th>现价</th><th>买入成本价(元)</th><th>持有份额(份)</th></tr></thead>
+      <thead><tr><th>ETF</th><th>现价</th><th>浮盈亏</th><th>仓位</th><th>成本价(元)</th><th>份额(份)</th><th>操作</th></tr></thead>
       <tbody>${rows}</tbody>
-    </table>
+    </table>` : `<p class="he-empty">当前无持仓。用下方「添加标的」加入你的 ETF。</p>`}
+    <div class="he-add-panel">
+      <div class="he-add-title">＋ 添加标的</div>
+      <div class="he-add-row">
+        <select id="addCode" class="he-input he-select">${opts}</select>
+        <input type="number" id="addCost" class="he-input" placeholder="买入成本价" step="0.001" min="0">
+        <input type="number" id="addShares" class="he-input" placeholder="持有份额" step="1" min="0">
+        <button class="he-btn he-save" onclick="heAddHolding()">添加</button>
+      </div>
+    </div>
     <div class="he-actions">
-      <button class="he-btn he-save" onclick="saveHoldings()">保存</button>
-      <button class="he-btn he-reset" onclick="resetHoldings()">清除全部</button>
-      <button class="he-btn he-cancel" onclick="closeHoldingsEditor()">取消</button>
+      <button class="he-btn he-save" onclick="heSave()">保存全部</button>
+      <button class="he-btn he-reset" onclick="heReset()">清除全部</button>
+      <button class="he-btn he-cancel" onclick="closeHoldingsEditor()">关闭</button>
       <span id="heMsg" class="he-msg"></span>
     </div>`;
   document.getElementById('holdingsOverlay').classList.add('open');
 }
 
-function saveHoldings() {
-  const data = {}; let ok = 0; const bad = [];
-  ETF_GROUPS.holdings.codes.forEach(code => {
-    const cEl = document.getElementById('cost_' + code), sEl = document.getElementById('shares_' + code);
-    const c = parseFloat(cEl.value), s = parseFloat(sEl.value);
-    if (cEl.value === '' && sEl.value === '') return; // 留空 = 不修改该项
-    if (isNaN(c) || isNaN(s) || c <= 0 || s < 0) { bad.push(code); return; }
-    data[code] = { cost: +c.toFixed(3), shares: Math.round(s) };
-    MY_HOLDINGS[code] = { cost: +c.toFixed(3), shares: Math.round(s) };
-    ok++;
-  });
-  const msg = document.getElementById('heMsg');
-  if (ok === 0) {
-    msg.textContent = bad.length ? '⚠️ 填写格式有误，请检查成本价/份额（正数）' : '请至少填写一只的有效成本价与份额';
-    msg.style.color = '#e74c3c'; return;
+function heShowSub(code, kind) {
+  const sub = document.getElementById('sub_' + code);
+  if (!sub) return;
+  document.querySelectorAll('.he-subrow').forEach(r => { if (r.id !== 'sub_' + code) { r.style.display = 'none'; r.firstElementChild.innerHTML = ''; } });
+  if (sub.style.display !== 'none') { sub.style.display = 'none'; sub.firstElementChild.innerHTML = ''; return; }
+  if (kind === 'add') {
+    sub.firstElementChild.innerHTML = `<div class="he-inline">
+      <span>加仓·买入价</span><input type="number" id="addprice_${code}" class="he-input he-inline-input" step="0.001" min="0" placeholder="成交价">
+      <span>买入份额</span><input type="number" id="addshares_${code}" class="he-input he-inline-input" step="1" min="1" placeholder="份额">
+      <button class="he-mini he-add" onclick="heAddPos('${code}')">确认加仓</button>
+      <button class="he-mini" onclick="heHideSub('${code}')">取消</button>
+      <span id="adderr_${code}" class="he-msg"></span>
+    </div>`;
+  } else {
+    sub.firstElementChild.innerHTML = `<div class="he-inline">
+      <span>减仓·卖出份额</span><input type="number" id="sellshares_${code}" class="he-input he-inline-input" step="1" min="1" placeholder="份额">
+      <span>成交价(可选)</span><input type="number" id="sellprice_${code}" class="he-input he-inline-input" step="0.001" min="0" placeholder="成交价">
+      <button class="he-mini he-red" onclick="heReducePos('${code}')">确认减仓</button>
+      <button class="he-mini" onclick="heHideSub('${code}')">取消</button>
+      <span id="rederr_${code}" class="he-msg"></span>
+    </div>`;
   }
-  MY_HOLDINGS.configured = true;
-  try { localStorage.setItem(HOLDINGS_KEY, JSON.stringify(data)); } catch (e) {}
-  updateHoldingsBtn();
-  renderGroup(currentGroup, currentMode);
-  msg.textContent = (bad.length ? '⚠️ ' + bad.length + ' 只格式有误已跳过 · ' : '') + '✅ 已保存 ' + ok + ' 只（本浏览器）';
-  msg.style.color = bad.length ? '#e67e22' : '#27ae60';
-  setTimeout(closeHoldingsEditor, 800);
+  sub.style.display = '';
 }
 
-function resetHoldings() {
+function heHideSub(code) {
+  const sub = document.getElementById('sub_' + code);
+  if (sub) { sub.style.display = 'none'; sub.firstElementChild.innerHTML = ''; }
+}
+
+function heAddPos(code) {
+  heFlushInputs();
+  const h = workingHoldings[code]; if (!h) return;
+  const p = parseFloat(document.getElementById('addprice_' + code).value);
+  const s = parseFloat(document.getElementById('addshares_' + code).value);
+  const err = document.getElementById('adderr_' + code);
+  if (isNaN(p) || isNaN(s) || p <= 0 || s <= 0) { if (err) { err.textContent = '请填写有效的买入价与份额'; err.style.color = '#e74c3c'; } return; }
+  const addSh = Math.round(s);
+  const newShares = h.shares + addSh;
+  const newCost = (h.cost * h.shares + p * addSh) / newShares;
+  workingHoldings[code] = { cost: +newCost.toFixed(3), shares: newShares };
+  heCommit(`✅ ${QUOTE_DATA[code].name} 加仓 ${addSh} 份，新成本价 ${newCost.toFixed(3)}`);
+  openHoldingsEditor();
+}
+
+function heReducePos(code) {
+  heFlushInputs();
+  const h = workingHoldings[code]; if (!h) return;
+  const s = parseFloat(document.getElementById('sellshares_' + code).value);
+  const err = document.getElementById('rederr_' + code);
+  if (isNaN(s) || s <= 0) { if (err) { err.textContent = '请填写有效的卖出份额'; err.style.color = '#e74c3c'; } return; }
+  const sell = Math.round(s);
+  if (sell >= h.shares) {
+    delete workingHoldings[code];
+    heCommit(`✅ ${QUOTE_DATA[code].name} 已清仓并移除`);
+  } else {
+    workingHoldings[code] = { cost: h.cost, shares: h.shares - sell };
+    heCommit(`✅ ${QUOTE_DATA[code].name} 减仓 ${sell} 份，剩 ${h.shares - sell} 份`);
+  }
+  openHoldingsEditor();
+}
+
+function heRemove(code) {
+  delete workingHoldings[code];
+  heCommit(`✅ 已移除 ${QUOTE_DATA[code].name}`);
+  openHoldingsEditor();
+}
+
+function heAddHolding() {
+  heFlushInputs();
+  const sel = document.getElementById('addCode');
+  const code = sel ? sel.value : '';
+  const c = parseFloat(document.getElementById('addCost').value);
+  const s = parseFloat(document.getElementById('addShares').value);
+  if (!code || !QUOTE_DATA[code]) { setHeMsg('请选择要添加的标的', '#e74c3c'); return; }
+  if (isNaN(c) || isNaN(s) || c <= 0 || s < 0) { setHeMsg('请填写有效的成本价与份额', '#e74c3c'); return; }
+  workingHoldings[code] = { cost: +c.toFixed(3), shares: Math.round(s) };
+  heCommit(`✅ 已添加 ${QUOTE_DATA[code].name}`);
+  openHoldingsEditor();
+}
+
+function heSave() {
+  heFlushInputs();
+  const codes = Object.keys(workingHoldings);
+  if (!codes.length) { setHeMsg('当前无持仓', '#e67e22'); return; }
+  heCommit(`✅ 已保存 ${codes.length} 只（本浏览器）`);
+  setTimeout(closeHoldingsEditor, 600);
+}
+
+function heReset() {
   try { localStorage.removeItem(HOLDINGS_KEY); } catch (e) {}
-  ETF_GROUPS.holdings.codes.forEach(code => { if (HOLDINGS_EXAMPLE[code]) MY_HOLDINGS[code] = HOLDINGS_EXAMPLE[code]; });
+  workingHoldings = null;
+  ETF_GROUPS.holdings.codes.length = 0;
+  DEFAULT_HOLDING_CODES.forEach(c => {
+    ETF_GROUPS.holdings.codes.push(c);
+    if (HOLDINGS_EXAMPLE[c]) MY_HOLDINGS[c] = HOLDINGS_EXAMPLE[c];
+  });
   MY_HOLDINGS.configured = false;
   updateHoldingsBtn();
+  renderGroupNav();
   renderGroup(currentGroup, currentMode);
   closeHoldingsEditor();
 }
