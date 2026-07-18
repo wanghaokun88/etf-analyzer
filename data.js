@@ -541,3 +541,101 @@ ALL_CODES.forEach(code => {
   ].find(m => m.code === code);
   ETF_META[code] = { code, name: q.name, fullCode: sp ? sp.fullCode : holdingMeta.fullCode, provider: sp ? sp.provider : holdingMeta.provider };
 });
+
+// =====================================================================
+// 14. 分组阈值可视化说明(模块2: 表头固定阈值展示, 引擎只读)
+// =====================================================================
+const GROUP_THRESHOLDS = {
+  star: {
+    groupId: "star", label: "全科创系ETF",
+    premiumSafe: 0.5, premiumDeepRed: 1.0,            // 折溢价安全±0.5%; 溢价>1% 深红
+    liquidityFloor: 8000, liquidityWatch: 5000,       // 日均成交≥8000万; <5000万 浅红观望(单位:万元)
+    kechuangBearDrawdown: 18,                         // 阶段高点回撤≥18% 触发科创走熊
+    top10ConcentrationHigh: 65,                       // 前十大权重集中度>65% 高波动风险
+    valuationBanDca: 85                               // 估值分位>85% 禁止长期重仓定投
+  },
+  broad: {
+    groupId: "broad", label: "宽基大盘ETF",
+    premiumSafe: 0.3, premiumWarn: 0.5,               // 折溢价安全±0.3%; 溢价>0.5% 预警
+    liquiditySafe: 10000,                             // 近20日日均成交≥1亿(单位:万元)
+    valuationAddDca: 30, valuationReduce: 80,         // 估值分位<30% 定投加仓; >80% 减底仓
+    top10ConcentrationSafe: 35                        // 前十大权重<35% 无集中波动风险
+  }
+};
+
+// =====================================================================
+// 15. 基金长期核心指标(模块3: 每只ETF详情补齐)
+// =====================================================================
+// 15.1 年化跟踪误差(1年 = QUARTERLY_DATA.trackError; 3年单独列出)
+const TRACK_ERROR_3Y = {
+  sh513310: 0.42, sh515880: 0.33, sh516510: 0.36, sh588200: 0.48, sz159326: 0.29, sz159516: 0.43, sz159732: 0.38,
+  sh588000: 0.36, sh588030: 0.46, sh588240: 0.52, sh588110: 0.47, sh588400: 0.55,
+  sh510300: 0.07, sh510500: 0.10, sh512100: 0.13, sh510050: 0.06, sz159915: 0.12, sh515080: 0.15
+};
+// 15.2 管理费 + 托管费 合计年费率拆分(合计 = FEE_RATE)
+const FEE_BREAKDOWN = {
+  sh513310: { mgmt: 0.40, custody: 0.10 }, sh515880: { mgmt: 0.40, custody: 0.10 }, sh516510: { mgmt: 0.40, custody: 0.10 },
+  sh588200: { mgmt: 0.40, custody: 0.10 }, sz159326: { mgmt: 0.40, custody: 0.10 }, sz159516: { mgmt: 0.40, custody: 0.10 }, sz159732: { mgmt: 0.40, custody: 0.10 },
+  sh588000: { mgmt: 0.40, custody: 0.10 }, sh588030: { mgmt: 0.40, custody: 0.10 }, sh588240: { mgmt: 0.50, custody: 0.10 }, sh588110: { mgmt: 0.40, custody: 0.10 }, sh588400: { mgmt: 0.40, custody: 0.10 },
+  sh510300: { mgmt: 0.15, custody: 0.05 }, sh510500: { mgmt: 0.15, custody: 0.05 }, sh512100: { mgmt: 0.15, custody: 0.05 }, sh510050: { mgmt: 0.15, custody: 0.05 }, sz159915: { mgmt: 0.15, custody: 0.05 }, sh515080: { mgmt: 0.20, custody: 0.06 }
+};
+
+// =====================================================================
+// 16. 全局大势量化面板 - 板块特征输入(模块1, 自动化4时点刷新)
+//     字段为大势引擎(MarketEngine)的判定特征。规则内置不可改。
+// =====================================================================
+const MARKET_TREND_SEED = {
+  asOf: "2026-07-17 收盘",
+  // 大盘宽基板块
+  broad: {
+    label: "大盘宽基",
+    aboveMA250: true,        // 站稳250日线
+    hhRising: false,         // 高低点抬升(洗盘震荡=false)
+    adx: 22,                 // ADX(趋势强度, >25 强趋势)
+    fund60dInflow: -120,     // 60日主力净流入(亿)
+    drawdownPct: -12,        // 自阶段高点回撤%
+    yearLineSupport: true,   // 年线支撑
+    volumeShrink: true,      // 缩量回调
+    highVolumeStall: false,  // 高位放量滞涨
+    weeklyMacdTopDiv: false, // 周线MACD顶背离
+    marginRising: false,     // 两融持续增加
+    northOutflow: false,     // 北向连续流出
+    belowMA250: false,       // 跌破250日线
+    reboundVolShrink: false, // 反弹缩量
+    afterCrashLowVol: false, // 大跌后持续地量
+    valuationLow: false,     // 估值历史低位
+    valuationPct: 38,        // 板块整体估值分位
+    fundOutflowSlow: true    // 资金流出放缓
+  },
+  // 科创板块(高弹性, 优先走弱)
+  kechuang: {
+    label: "科创板块",
+    aboveMA250: false,
+    hhRising: false,
+    adx: 28,
+    fund60dInflow: -180,
+    drawdownPct: -19,        // 自高点回撤(接近20%技术熊市边界)
+    yearLineSupport: false,
+    volumeShrink: false,
+    highVolumeStall: true,   // 前期高位放量滞涨
+    weeklyMacdTopDiv: true,  // 周线MACD顶背离
+    marginRising: true,      // 两融仍增
+    northOutflow: true,      // 北向连续流出
+    belowMA250: true,        // 跌破250日线
+    reboundVolShrink: true,  // 反弹缩量
+    afterCrashLowVol: false,
+    valuationLow: false,
+    valuationPct: 65,
+    fundOutflowSlow: false
+  }
+};
+
+// =====================================================================
+// 17. 4时点标签(模块4)
+// =====================================================================
+const TIME_POINTS = [
+  { key: "0931", label: "09:31 开盘", kind: "open",   desc: "开盘轻量化独立面板" },
+  { key: "1131", label: "11:31 午盘", kind: "noon",   desc: "午盘独立分析面板" },
+  { key: "1331", label: "13:31 午后", kind: "aft",    desc: "午后开盘校验面板" },
+  { key: "1600", label: "16:00 收盘", kind: "close",  desc: "收盘完整复盘面板" }
+];
