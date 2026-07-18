@@ -10,15 +10,119 @@ let chartInstances = {};
 
 const KLINE_PERIOD_LABEL = { daily: '日线', weekly: '周线', monthly: '月线', min60: '60分', min30: '30分', min15: '15分', min5: '5分', min1: '1分' };
 
+// 持仓成本价本地存储（不依赖交易平台，数据仅存浏览器）
+const HOLDINGS_KEY = 'etf_holdings_v1';
+// 占位示例（清除后回退到此）
+const HOLDINGS_EXAMPLE = {
+  sh513310: { cost: 1.214, shares: 10000 }, sh515880: { cost: 0.881, shares: 10000 },
+  sh516510: { cost: 0.920, shares: 10000 }, sh588200: { cost: 0.925, shares: 10000 },
+  sz159326: { cost: 0.878, shares: 10000 }, sz159516: { cost: 1.668, shares: 10000 },
+  sz159732: { cost: 0.758, shares: 10000 }
+};
+
 // ========== 初始化 ==========
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('dataTime').textContent = DATA_TIMESTAMP;
   document.getElementById('dataSource').textContent = DATA_SOURCE;
+  loadHoldingsFromStorage();
+  updateHoldingsBtn();
   renderModeSwitch();
   renderGroupNav();
   renderGroup(currentGroup, currentMode);
   renderDataArchitecture();
 });
+
+// ========== 持仓成本价(本地) ==========
+function loadHoldingsFromStorage() {
+  try {
+    const raw = localStorage.getItem(HOLDINGS_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== 'object') return;
+    let any = false;
+    ETF_GROUPS.holdings.codes.forEach(code => {
+      const h = data[code];
+      if (h && typeof h.cost === 'number' && typeof h.shares === 'number') {
+        MY_HOLDINGS[code] = { cost: h.cost, shares: h.shares };
+        any = true;
+      }
+    });
+    if (any) MY_HOLDINGS.configured = true;
+  } catch (e) { /* 损坏的存储直接忽略 */ }
+}
+
+function updateHoldingsBtn() {
+  const b = document.getElementById('btnEditHoldings');
+  if (!b) return;
+  b.classList.toggle('configured', !!MY_HOLDINGS.configured);
+  b.textContent = MY_HOLDINGS.configured ? '⚙️ 持仓成本已配置' : '⚙️ 设置持仓成本';
+}
+
+function openHoldingsEditor() {
+  const box = document.getElementById('holdingsEditor');
+  const rows = ETF_GROUPS.holdings.codes.map(code => {
+    const name = QUOTE_DATA[code].name, price = QUOTE_DATA[code].price;
+    const cur = MY_HOLDINGS[code];
+    const cost = (cur && typeof cur.cost === 'number') ? cur.cost : '';
+    const shares = (cur && typeof cur.shares === 'number') ? cur.shares : '';
+    return `<tr>
+      <td class="he-name">${name}<span class="he-code">${code}</span></td>
+      <td class="he-price">${price}</td>
+      <td><input type="number" class="he-input" id="cost_${code}" placeholder="买入价" step="0.001" min="0" value="${cost}"></td>
+      <td><input type="number" class="he-input" id="shares_${code}" placeholder="份额" step="1" min="0" value="${shares}"></td>
+    </tr>`;
+  }).join('');
+  box.innerHTML = `
+    <h2 style="margin:0 0 4px">设置持仓成本价</h2>
+    <p class="he-sub">数据仅保存在本浏览器（localStorage），不上传任何服务器。周一拿到真实买入价与份额后填这里即可，分组1 立即显示真实盈亏 / 止损止盈 / 减仓提示。</p>
+    <table class="he-table">
+      <thead><tr><th>ETF</th><th>现价</th><th>买入成本价(元)</th><th>持有份额(份)</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="he-actions">
+      <button class="he-btn he-save" onclick="saveHoldings()">保存</button>
+      <button class="he-btn he-reset" onclick="resetHoldings()">清除全部</button>
+      <button class="he-btn he-cancel" onclick="closeHoldingsEditor()">取消</button>
+      <span id="heMsg" class="he-msg"></span>
+    </div>`;
+  document.getElementById('holdingsOverlay').classList.add('open');
+}
+
+function saveHoldings() {
+  const data = {}; let ok = 0; const bad = [];
+  ETF_GROUPS.holdings.codes.forEach(code => {
+    const cEl = document.getElementById('cost_' + code), sEl = document.getElementById('shares_' + code);
+    const c = parseFloat(cEl.value), s = parseFloat(sEl.value);
+    if (cEl.value === '' && sEl.value === '') return; // 留空 = 不修改该项
+    if (isNaN(c) || isNaN(s) || c <= 0 || s < 0) { bad.push(code); return; }
+    data[code] = { cost: +c.toFixed(3), shares: Math.round(s) };
+    MY_HOLDINGS[code] = { cost: +c.toFixed(3), shares: Math.round(s) };
+    ok++;
+  });
+  const msg = document.getElementById('heMsg');
+  if (ok === 0) {
+    msg.textContent = bad.length ? '⚠️ 填写格式有误，请检查成本价/份额（正数）' : '请至少填写一只的有效成本价与份额';
+    msg.style.color = '#e74c3c'; return;
+  }
+  MY_HOLDINGS.configured = true;
+  try { localStorage.setItem(HOLDINGS_KEY, JSON.stringify(data)); } catch (e) {}
+  updateHoldingsBtn();
+  renderGroup(currentGroup, currentMode);
+  msg.textContent = (bad.length ? '⚠️ ' + bad.length + ' 只格式有误已跳过 · ' : '') + '✅ 已保存 ' + ok + ' 只（本浏览器）';
+  msg.style.color = bad.length ? '#e67e22' : '#27ae60';
+  setTimeout(closeHoldingsEditor, 800);
+}
+
+function resetHoldings() {
+  try { localStorage.removeItem(HOLDINGS_KEY); } catch (e) {}
+  ETF_GROUPS.holdings.codes.forEach(code => { if (HOLDINGS_EXAMPLE[code]) MY_HOLDINGS[code] = HOLDINGS_EXAMPLE[code]; });
+  MY_HOLDINGS.configured = false;
+  updateHoldingsBtn();
+  renderGroup(currentGroup, currentMode);
+  closeHoldingsEditor();
+}
+
+function closeHoldingsEditor() { document.getElementById('holdingsOverlay').classList.remove('open'); }
 
 // ========== 工具 ==========
 function changeCls(p) { return p >= 0 ? 'up' : 'down'; }
@@ -130,7 +234,7 @@ function groupRiskNarrative(r, mode) {
 
 function renderPnlStrip() {
   if (!MY_HOLDINGS.configured) {
-    return `<div class="pnl-strip pnl-empty">⚠️ 持仓成本价未配置（当前为示例）。请在 <code>data.js</code> 的 <code>MY_HOLDINGS</code> 填入真实买入价与份额，并把 <code>configured</code> 改为 <code>true</code>，分组1 将显示真实盈亏 / 止损止盈 / 减仓提示。</div>`;
+    return `<div class="pnl-strip pnl-empty">⚠️ 持仓成本价未配置（当前为示例）。点击右上角 <b>「设置持仓成本」</b> 填入真实买入价与份额（数据存本浏览器），分组1 将立即显示真实盈亏 / 止损止盈 / 减仓提示。</div>`;
   }
   const cells = ETF_GROUPS.holdings.codes.map(code => {
     const pnl = RiskEngine.getHoldingPnl(code);
