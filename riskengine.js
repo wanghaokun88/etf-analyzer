@@ -296,13 +296,57 @@ const RiskEngine = (function () {
 
     // 去重 + 按优先级排序 + 截取
     const seen = new Set(); const uniq = [];
+    advices.forEach(a => { a.action = normalizeAction(a.action); });
     advices.forEach(a => { if (!seen.has(a.action)) { seen.add(a.action); uniq.push(a); } });
     const order = { high: 0, mid: 1, low: 2 };
     uniq.sort((a, b) => order[a.priority] - order[b.priority]);
-    return uniq.slice(0, 6);
+    const constrained = applyGlobalConstraints(code, ev, uniq);
+    return constrained.slice(0, 6);
   }
 
   function d_maxDrawdown(code) { return ETF_DETAIL[code].maxDrawdown; }
+
+  // ---------- 全局大势缓存（模块1/模块5 强制约束） ----------
+  let _globalTrendCache = null;
+  function getGlobalTrend() {
+    if (!_globalTrendCache) _globalTrendCache = MarketEngine.evaluateGlobal();
+    return _globalTrendCache;
+  }
+
+  // 操作动作标准化（模块5: 仅允许 加仓/定投/减仓/清仓/观望/换仓）
+  function normalizeAction(a) {
+    if (a.indexOf('清仓') >= 0) return '清仓';
+    if (a.indexOf('换仓') >= 0) return '换仓';
+    if (a.indexOf('加仓') >= 0 || a.indexOf('博反弹') >= 0 || a.indexOf('逢低介入') >= 0) return '加仓';
+    if (a.indexOf('定投') >= 0 || a.indexOf('摊薄') >= 0 || a.indexOf('红利再投') >= 0) return '定投';
+    if (a.indexOf('减仓') >= 0 || a.indexOf('止损') >= 0 || a.indexOf('止盈') >= 0) return '减仓';
+    if (a.indexOf('观望') >= 0 || a.indexOf('博弈') >= 0 || a.indexOf('持有') >= 0 ||
+        a.indexOf('不追高') >= 0 || a.indexOf('高抛低吸') >= 0 || a.indexOf('确认趋势') >= 0 ||
+        a.indexOf('关注') >= 0 || a.indexOf('留意') >= 0) return '观望';
+    if (a.indexOf('填写') >= 0) return a; // 配置提示, 保留原样
+    return '观望';
+  }
+
+  // 全局风险强制约束（模块1.5 + 模块5）
+  // 全局极高 → 屏蔽全站加仓/定投加仓, 强制降仓防御, 无视利好
+  // 标的风险微势为顶部出货/下跌趋势 → 严禁生成任何加仓/定投加仓建议
+  function applyGlobalConstraints(code, ev, advices) {
+    const g = getGlobalTrend();
+    const globalExtreme = MarketEngine.isGlobalExtreme(g);
+    const microBlocks = ev.microTrend && MarketEngine.stageBlocksAdd(ev.microTrend.stageKey);
+    if (!globalExtreme && !microBlocks) return advices;
+    let out = advices.filter(a => a.action !== '加仓' && a.action !== '定投');
+    if (globalExtreme) {
+      const hasDefense = out.some(a => a.action === '清仓' || a.action === '减仓' || a.action === '降仓防御');
+      if (!hasDefense) {
+        out.unshift({ priority: 'high', action: '降仓防御', logic: `全局大势判定为【极高风险】(全市场走熊概率${g.bearProb}%), 按强制约束全站屏蔽加仓/定投加仓, 统一降仓防御, 无视单只折价、资金流入等利好信号` });
+      } else {
+        const rank = a => (a.action === '降仓防御' || a.action === '清仓' || a.action === '减仓') ? 0 : 1;
+        out.sort((a, b) => rank(a) - rank(b));
+      }
+    }
+    return out;
+  }
 
   // ---------- 对外: 单只评估 ----------
   function evaluate(code, mode, groupId) {
@@ -351,6 +395,8 @@ const RiskEngine = (function () {
       }
     }
     ev.holdingFlags = holdingFlags;
+    ev.microTrend = MarketEngine.evaluateMicro(code, ev);
+    ev.globalExtreme = MarketEngine.isGlobalExtreme(getGlobalTrend());
     ev.advices = buildAdvices(code, ev, mode, groupId, extraAdvices);
     return ev;
   }
@@ -373,5 +419,5 @@ const RiskEngine = (function () {
     return { group, items, avgScore: Math.round(avgScore), groupGrade, deepRed, green, count: items.length };
   }
 
-  return { evaluate, evaluateGroup, getHoldingPnl, getPortfolio, RISK_GRADES, THRESHOLDS };
+  return { evaluate, evaluateGroup, getHoldingPnl, getPortfolio, getGlobalTrend, RISK_GRADES, THRESHOLDS };
 })();
