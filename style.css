@@ -845,3 +845,73 @@ body {
 .tab-bar::-webkit-scrollbar { height: 4px; }
 .tab-bar::-webkit-scrollbar-track { background: transparent; }
 .tab-bar::-webkit-scrollbar-thumb { background: var(--text-light); border-radius: 2px; }
+
+/* ========== 大类1: 实时盘口高频 ========== */
+.realtime-grid { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 16px; margin-top: 12px; }
+.realtime-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 16px; box-shadow: var(--shadow-sm); }
+.panel-title { font-size: 14px; font-weight: 700; color: var(--text-primary); margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; }
+.realtime-badge { font-size: 10px; font-weight: 600; color: var(--accent-orange); background: #fff3e0; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+.order-book-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.order-book-table th { color: var(--text-light); font-weight: 500; padding: 4px 6px; text-align: left; border-bottom: 1px solid var(--border-color); }
+.order-book-table td { padding: 4px 6px; border-bottom: 1px dashed #f0f0f0; }
+.ob-level { color: var(--text-secondary); }
+.ob-price.up { color: var(--color-up); font-weight: 600; }
+.ob-price.down { color: var(--color-down); font-weight: 600; }
+.ob-vol { color: var(--text-secondary); text-align: right; font-variant-numeric: tabular-nums; }
+.ob-now { background: #f8f9fa; font-weight: 700; }
+.ob-now td { border-bottom: 2px solid var(--border-color); }
+.ob-meta { margin-top: 10px; font-size: 11px; color: var(--text-light); line-height: 1.6; }
+.iopv-main { display: flex; flex-direction: column; gap: 10px; }
+.iopv-row { display: flex; justify-content: space-between; font-size: 13px; }
+.iopv-row span { color: var(--text-secondary); }
+.iopv-row b { font-variant-numeric: tabular-nums; }
+.iopv-arb { margin-top: 12px; padding: 8px; border-radius: 8px; font-size: 12px; font-weight: 600; text-align: center; }
+.iopv-arb.arb-yes { background: #fdeaea; color: var(--color-up); }
+.iopv-arb.arb-no { background: #eafaf1; color: var(--color-down); }
+.tick-card .tick-row { display: flex; justify-content: space-between; font-size: 13px; padding: 8px 0; border-bottom: 1px dashed #f0f0f0; }
+.tick-row span { color: var(--text-secondary); }
+.tick-row b { font-variant-numeric: tabular-nums; }
+
+/* ========== 多周期K线切换 ========== */
+.kline-period-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.kline-period-btn { padding: 6px 14px; border: 1px solid var(--border-color); background: var(--bg-card); border-radius: 18px; font-size: 13px; cursor: pointer; color: var(--text-secondary); transition: all 0.2s; }
+.kline-period-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
+.kline-period-btn.active { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+
+/* ========== 大类3: ETF专属基本面资金 ========== */
+.etf-specific-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 12px; }
+.es-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 16px; box-shadow: var(--shadow-sm); display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; align-content: start; }
+.es-label { font-size: 12px; color: var(--text-secondary); align-self: center; }
+.es-value { font-size: 15px; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
+.pcf-card { grid-column: span 2; grid-template-columns: 1fr 1fr; }
+.pcf-item { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; border-bottom: 1px dashed #f0f0f0; }
+.pcf-item span:first-child { color: var(--text-secondary); }
+.pcf-weight { font-weight: 700; color: var(--accent-purple); }
+
+/* ========== 大类4: 宏观&板块对照 ========== */
+.macro-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 12px; }
+.macro-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 16px; box-shadow: var(--shadow-sm); }
+.catalyst-card { grid-column: span 1; }
+
+/* ========== 数据架构 & 更新节奏 ========== */
+.data-architecture { max-width: 1200px; margin: 32px auto 0; padding: 0 20px; }
+.arch-cat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 12px 0 24px; }
+.arch-cat-card { background: linear-gradient(135deg, #ffffff, #f8f9fa); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 16px; box-shadow: var(--shadow-sm); }
+.arch-cat-title { font-size: 14px; font-weight: 700; color: var(--accent-blue); margin-bottom: 10px; }
+.arch-cat-card ul { list-style: none; padding: 0; }
+.arch-cat-card li { font-size: 12px; color: var(--text-secondary); padding: 4px 0 4px 16px; position: relative; }
+.arch-cat-card li::before { content: "▪"; color: var(--accent-blue); position: absolute; left: 0; }
+.arch-sched-title { font-size: 16px; font-weight: 700; color: var(--text-primary); margin: 8px 0 12px; }
+.arch-sched { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.arch-sched-card { background: var(--bg-card); border: 1px solid var(--border-color); border-left: 4px solid var(--accent-teal); border-radius: var(--radius-md); padding: 14px 16px; box-shadow: var(--shadow-sm); font-size: 12px; line-height: 1.7; }
+.arch-sched-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.arch-sched-cadence { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.arch-sched-window { font-size: 11px; color: var(--accent-teal); font-weight: 600; white-space: nowrap; }
+.arch-sched-freq { color: var(--accent-orange); font-weight: 600; margin-bottom: 6px; }
+.arch-sched-items, .arch-sched-method, .arch-sched-source { color: var(--text-secondary); }
+.arch-sched-items b, .arch-sched-method b, .arch-sched-source b { color: var(--text-primary); }
+
+@media (max-width: 900px) {
+  .realtime-grid, .etf-specific-grid, .macro-grid, .arch-cat-grid { grid-template-columns: 1fr; }
+  .pcf-card { grid-column: span 1; }
+}
