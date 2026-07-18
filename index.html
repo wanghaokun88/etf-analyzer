@@ -3,19 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ETF 多维度分析仪表盘</title>
+  <title>ETF 分组风险分析仪表盘</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <script src="data.js"></script>
   <script src="technical.js"></script>
+  <script src="riskengine.js"></script>
 </head>
 <body>
-  <!-- 顶部导航 -->
   <header class="header">
     <div class="header-inner">
       <div class="logo">
         <span class="logo-icon">📈</span>
-        <span class="logo-text">ETF 多维度分析仪表盘</span>
+        <span class="logo-text">ETF 分组风险分析仪表盘</span>
       </div>
       <div class="header-meta">
         <span class="timestamp">数据更新: <strong id="dataTime"></strong></span>
@@ -24,34 +24,39 @@
     </div>
   </header>
 
-  <!-- 组合概览 -->
-  <section class="portfolio-overview">
-    <div class="section-title">
-      <span class="section-icon">📊</span>
-      <h2>持仓组合概览</h2>
+  <!-- 双分析模式切换 -->
+  <section class="mode-switch">
+    <div class="mode-switch-inner">
+      <span class="mode-label">分析模式：</span>
+      <div class="mode-btns" id="modeBtns"></div>
+      <span class="mode-desc" id="modeDesc"></span>
     </div>
-    <div class="portfolio-stats" id="portfolioStats"></div>
-    <div class="portfolio-table" id="portfolioTable"></div>
   </section>
 
-  <!-- ETF 详细分析 -->
-  <div class="etf-tabs">
-    <div class="tab-bar" id="tabBar"></div>
-  </div>
+  <!-- 3个独立分组导航 -->
+  <nav class="group-nav" id="groupNav"></nav>
 
-  <div class="etf-detail" id="etfDetail"></div>
+  <!-- 分组视图(表格+风险标签+建议) -->
+  <main id="groupView"></main>
 
-  <!-- 数据架构 & 更新节奏 (全局) -->
+  <!-- 数据架构(全局, 折叠) -->
   <section class="data-architecture" id="dataArchitecture"></section>
 
-  <!-- 底部声明 -->
   <footer class="footer">
     <div class="footer-inner">
       <p class="disclaimer">⚠️ 声明：本网站仅为个人投资研究工具，所有分析基于公开市场数据，不构成任何投资建议。投资有风险，决策需谨慎。</p>
-      <p class="footer-meta">数据来源: 腾讯自选股行情数据接口 + 综合分析模型 | 分析框架: 基本面/技术面/消息面/资金面/量能五维评估</p>
-      <p class="footer-tech">纯HTML+JS静态网站 · 部署于 GitHub Pages · 数据架构 v2.0</p>
+      <p class="footer-meta">数据来源: 腾讯自选股行情数据接口 + 综合分析模型 | 框架: 3分组 / 双模式 / 四级风险 / 固定阈值</p>
+      <p class="footer-tech">纯HTML+JS静态网站 · 部署于 GitHub Pages · 数据架构 v3.0 · 交易日 09:31/11:31/13:31/16:00 自动刷新</p>
     </div>
   </footer>
+
+  <!-- 单只深度分析弹层 -->
+  <div class="detail-overlay" id="detailOverlay" onclick="if(event.target===this)closeDetail()">
+    <div class="detail-modal">
+      <button class="detail-close" onclick="closeDetail()">✕</button>
+      <div id="etfDetail"></div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>
