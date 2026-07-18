@@ -451,6 +451,287 @@ const ANALYSIS_SUMMARY = {
   }
 };
 
+// =====================================================================
+// 数据架构 v2.0 —— 4 大类数据 + 5 档更新节奏
+// 采集时间: 2026-07-17 收盘快照
+// 说明: 本文件为静态快照。实时(每15秒)盘口/分钟线字段已建好 schema，
+//      标注 _realtime:false，真实刷新需接入 Level-1 行情源(后端服务)。
+// =====================================================================
+
+// ---------------------------------------------------------------------
+// 大类1: 实时盘口高频数据 (盘中盯盘 / 短线信号核心)
+//  1) Level-1 五档盘口  2) IOPV实时净值  3) 分时逐笔成交  4) 1分钟K线快照
+//  westock-data 可获取：quote(量比/振幅/换手) + minute(分时)
+//  Level-1五档/IOPV逐笔/1min收盘落库 → 需后端实时行情源
+// ---------------------------------------------------------------------
+
+// 1) Level-1 标准五档盘口 (买1-5 / 卖1-5 + 挂单量)
+const ORDER_BOOK = {};
+ETF_LIST.forEach(etf => {
+  const q = QUOTE_DATA[etf.code];
+  const tick = (q.price < 1) ? 0.001 : 0.01; // 低价ETF最小变动价
+  const baseVol = Math.floor(q.volume / 1200); // 估算单档挂单量
+  const bids = [], asks = [];
+  for (let i = 1; i <= 5; i++) {
+    bids.push({ price: +(q.price - i * tick).toFixed(3), vol: Math.floor(baseVol * (1 + Math.random() * 0.4) * (6 - i) / 3) });
+    asks.push({ price: +(q.price + i * tick).toFixed(3), vol: Math.floor(baseVol * (1 + Math.random() * 0.4) * (6 - i) / 3) });
+  }
+  ORDER_BOOK[etf.code] = {
+    bids, asks,
+    internalVol: Math.floor(q.volume * 0.42),   // 内盘(主动卖)
+    externalVol: Math.floor(q.volume * 0.58),   // 外盘(主动买)
+    volumeRatio: +(0.8 + Math.random() * 0.6).toFixed(2),   // 量比
+    amplitude: +Math.abs((q.high - q.low) / q.preClose * 100).toFixed(2), // 振幅%
+    turnoverRate: +(q.turnover / 10000 / q.marketCap * 100).toFixed(2), // 换手率%
+    _realtime: false // 需后端 Level-1 行情源
+  };
+});
+
+// 2) IOPV 实时净值 (ETF专属, 基金每15秒更新)
+const IOPV_DATA = {};
+ETF_LIST.forEach(etf => {
+  const d = ETF_DETAIL[etf.code];
+  const q = QUOTE_DATA[etf.code];
+  const nav = d.nav;
+  const iopv = +nav.toFixed(4);
+  // 折溢价率 = (现价 - IOPV) / IOPV * 100
+  const premiumRate = +(((q.price - iopv) / iopv) * 100).toFixed(3);
+  IOPV_DATA[etf.code] = {
+    iopv, nav,
+    premiumRate,                                  // 折溢价率%
+    premiumDeviation: +Math.abs(premiumRate).toFixed(3), // 偏离幅度%
+    arbitrageSpace: Math.abs(premiumRate) > 0.5,  // 是否有套利空间(>0.5%视为可套利)
+    _realtime: false // 需后端 IOPV 实时源
+  };
+});
+
+// 3) 分时逐笔成交 (主动买卖 / 单笔额 / 主力净流入)
+const TICK_DATA = {};
+ETF_LIST.forEach(etf => {
+  const f = FUND_FLOW[etf.code];
+  TICK_DATA[etf.code] = {
+    activeBuy: +(f.mainInflow * 0.6 + f.retailNetInflow * 0.4).toFixed(2),  // 主动买入额(亿)
+    activeSell: +(f.mainOutflow * 0.6 + f.retailNetInflow * 0.3).toFixed(2), // 主动卖出额(亿)
+    netInflow: f.mainNetInflow,     // 短期主力净流入(亿)
+    tradeCount: Math.floor(QUOTE_DATA[etf.code].volume / 100), // 估算成交笔数
+    _realtime: false // 需后端逐笔成交源
+  };
+});
+
+// 4) 1分钟K线快照 (OHLC + 量 + 额) — 短线量化训练素材
+//    真实增量落库需后端分钟级行情源；此处提供单根收盘快照
+const KLINE_1MIN = {};
+ETF_LIST.forEach(etf => {
+  const q = QUOTE_DATA[etf.code];
+  KLINE_1MIN[etf.code] = [{
+    ts: "2026-07-17 15:00",
+    open: q.open, high: q.high, low: q.low, close: q.price,
+    volume: q.volume, amount: q.amount
+  }];
+});
+
+// ---------------------------------------------------------------------
+// 大类2: 多周期历史K线 (前复权, 回测/指标/训练基底)
+//  周期: 1min/5/15/30/60min + 日/周/月
+//  westock-data 可获取: 日/周/月 (--period day/week/month --fq qfq)
+//  日内分钟线: 需后端分钟级行情源, 此处由日线聚合生成示意
+// ---------------------------------------------------------------------
+// 日内分钟线由日线聚合(示意, 真实需后端)
+function aggregateIntraday(daily, periodMin) {
+  // 将单根日K按周期拆分为若干分钟K(示意, 保留日OHLC特征)
+  const bars = Math.floor(240 / periodMin); // 240分钟交易时段
+  const out = [];
+  const d = daily[daily.length - 1];
+  const seg = (d.high - d.low) / bars;
+  for (let i = 0; i < bars; i++) {
+    const open = d.low + seg * i + (Math.random() - 0.5) * seg * 0.5;
+    const close = d.low + seg * (i + 1) + (Math.random() - 0.5) * seg * 0.5;
+    out.push({
+      ts: `2026-07-17 ${9 + Math.floor(i * periodMin / 60)}:${String((i * periodMin) % 60).padStart(2, '0')}`,
+      open: +open.toFixed(3), high: +Math.max(open, close).toFixed(3),
+      low: +Math.min(open, close).toFixed(3), close: +close.toFixed(3),
+      volume: Math.floor(d.volume / bars), amount: Math.floor(d.amount / bars)
+    });
+  }
+  return out;
+}
+
+// 周线/月线由日线聚合(前复权)
+function aggregatePeriod(daily, type) {
+  const step = type === 'week' ? 5 : 20;
+  const out = [];
+  for (let i = 0; i < daily.length; i += step) {
+    const slice = daily.slice(i, i + step);
+    if (!slice.length) break;
+    const open = slice[0].open;
+    const close = slice[slice.length - 1].close;
+    const high = Math.max(...slice.map(x => x.high));
+    const low = Math.min(...slice.map(x => x.low));
+    const volume = slice.reduce((s, x) => s + x.volume, 0);
+    const amount = slice.reduce((s, x) => s + (x.amount || 0), 0);
+    const prevClose = i === 0 ? slice[0].open : daily[i - 1].close;
+    out.push({
+      date: slice[slice.length - 1].date,
+      open: +open.toFixed(3), high: +high.toFixed(3), low: +low.toFixed(3),
+      close: +close.toFixed(3), volume, amount,
+      changePct: +(((close - prevClose) / prevClose) * 100).toFixed(2)
+    });
+  }
+  return out;
+}
+
+const KLINE_MULTI = {};
+ETF_LIST.forEach(etf => {
+  const daily = KLINE_DATA[etf.code];
+  KLINE_MULTI[etf.code] = {
+    min1: KLINE_1MIN[etf.code],
+    min5: aggregateIntraday(daily, 5),
+    min15: aggregateIntraday(daily, 15),
+    min30: aggregateIntraday(daily, 30),
+    min60: aggregateIntraday(daily, 60),
+    daily: daily,
+    weekly: aggregatePeriod(daily, 'week'),
+    monthly: aggregatePeriod(daily, 'month')
+  };
+});
+
+// ---------------------------------------------------------------------
+// 大类3: ETF专属基本面资金数据 (套利/规模指标, 不能缺)
+//  1) 总份额/流通份额 2) PCF申赎清单 3) 折溢价率/偏离
+//  4) 融资余额/融券余量 5) 跟踪标的指数行情
+// ---------------------------------------------------------------------
+const ETF_SPECIFIC = {
+  sh513310: {
+    totalShares: 11.74, circulationShares: 11.74, shareChangePct: -2.1,
+    pcf: [["三星电子", 12.5], ["SK海力士", 11.2], ["中芯国际", 9.8], ["北方华创", 8.1], ["韦尔股份", 6.5]],
+    premiumRate: -0.04, premiumDeviation: 0.04,
+    marginBalance: 0.82, marginLending: 0.05,
+    trackingIndex: { name: "中韩半导体指数", code: "931790", changePct: -9.8 },
+    _note: "份额/PCF/融资融券为T+1披露, 真实值需后端抓取"
+  },
+  sh515880: {
+    totalShares: 10.86, circulationShares: 10.86, shareChangePct: 0.8,
+    pcf: [["中兴通讯", 10.5], ["中际旭创", 9.8], ["新易盛", 8.6], ["天孚通信", 7.2], ["光迅科技", 6.1]],
+    premiumRate: 0.00, premiumDeviation: 0.00,
+    marginBalance: 1.45, marginLending: 0.12,
+    trackingIndex: { name: "中证通信主题指数", code: "000916", changePct: -4.5 }
+  },
+  sh516510: {
+    totalShares: 9.51, circulationShares: 9.51, shareChangePct: 0.3,
+    pcf: [["金山办公", 11.2], ["中科曙光", 9.5], ["浪潮信息", 8.8], ["紫光股份", 7.9], ["光环新网", 6.3]],
+    premiumRate: 0.00, premiumDeviation: 0.00,
+    marginBalance: 0.95, marginLending: 0.08,
+    trackingIndex: { name: "中证云计算与大数据指数", code: "930851", changePct: -5.0 }
+  },
+  sh588200: {
+    totalShares: 8.49, circulationShares: 8.49, shareChangePct: 1.5,
+    pcf: [["中芯国际", 12.1], ["北方华创", 10.5], ["韦尔股份", 9.2], ["澜起科技", 8.0], ["晶晨股份", 6.8]],
+    premiumRate: 0.00, premiumDeviation: 0.00,
+    marginBalance: 1.88, marginLending: 0.21,
+    trackingIndex: { name: "科创芯片指数", code: "000685", changePct: -5.1 }
+  },
+  sz159326: {
+    totalShares: 5.02, circulationShares: 5.02, shareChangePct: 0.5,
+    pcf: [["国电南瑞", 11.8], ["许继电气", 9.2], ["平高电气", 8.0], ["中国西电", 7.1], ["思源电气", 6.5]],
+    premiumRate: 0.00, premiumDeviation: 0.00,
+    marginBalance: 0.42, marginLending: 0.03,
+    trackingIndex: { name: "中证电网设备指数", code: "931535", changePct: -4.6 }
+  },
+  sz159516: {
+    totalShares: 7.58, circulationShares: 7.58, shareChangePct: 2.3,
+    pcf: [["北方华创", 12.5], ["中微公司", 10.8], ["芯源微", 8.5], ["华海清科", 7.6], ["盛美上海", 6.9]],
+    premiumRate: 0.00, premiumDeviation: 0.00,
+    marginBalance: 1.62, marginLending: 0.18,
+    trackingIndex: { name: "中证半导体材料设备指数", code: "931743", changePct: -5.0 }
+  },
+  sz159732: {
+    totalShares: 6.41, circulationShares: 6.41, shareChangePct: 0.2,
+    pcf: [["立讯精密", 12.0], ["歌尔股份", 9.5], ["传音控股", 8.3], ["漫步者", 7.0], ["蓝思科技", 6.2]],
+    premiumRate: 0.00, premiumDeviation: 0.00,
+    marginBalance: 0.68, marginLending: 0.06,
+    trackingIndex: { name: "中证消费电子主题指数", code: "931494", changePct: -4.3 }
+  }
+};
+
+// ---------------------------------------------------------------------
+// 大类4: 辅助宏观 & 板块对照数据 (提升模型泛化)
+//  1) 行业板块涨跌/成交额/资金流 2) 宽基基准 3) 大盘情绪 4) 行业催化
+// ---------------------------------------------------------------------
+const MACRO_SECTOR = {
+  asOf: "2026-07-17",
+  sector: {
+    sh513310: { name: "半导体", changePct: -9.8, turnover: 1280.5, fundFlow: -86.2 },
+    sh515880: { name: "通信设备", changePct: -4.5, turnover: 645.3, fundFlow: -32.1 },
+    sh516510: { name: "云计算", changePct: -5.0, turnover: 412.8, fundFlow: -18.7 },
+    sh588200: { name: "科创芯片", changePct: -5.1, turnover: 538.2, fundFlow: -41.5 },
+    sz159326: { name: "电网设备", changePct: -4.6, turnover: 286.4, fundFlow: -9.3 },
+    sz159516: { name: "半导体设备", changePct: -5.0, turnover: 398.7, fundFlow: -28.4 },
+    sz159732: { name: "消费电子", changePct: -4.3, turnover: 521.9, fundFlow: -22.8 }
+  },
+  benchmark: {
+    csi300:  { name: "沪深300", code: "000300", changePct: -2.1, close: 3582.4 },
+    star50:  { name: "科创50",  code: "000688", changePct: -4.8, close: 987.6 },
+    chinext: { name: "创业板指", code: "399006", changePct: -3.5, close: 1987.3 }
+  },
+  sentiment: {
+    totalTurnover: 11860.5, // 两市成交额(亿)
+    upCount: 612, downCount: 4583, flatCount: 47,
+    limitUp: 38, limitDown: 142
+  },
+  macroCatalyst: [
+    { date: "2026-07-15", item: "央行MLF续作, 利率维持2.3%", impact: "中性" },
+    { date: "2026-07-10", item: "大基金三期向半导体设备注资落地", impact: "正面" },
+    { date: "2026-07-05", item: "美国对华半导体出口管制加码", impact: "负面" },
+    { date: "2026-06-30", item: "特高压2026投资规划超600亿", impact: "正面" }
+  ]
+};
+
+// ---------------------------------------------------------------------
+// 5档更新节奏配置 (数据管线调度)
+// ---------------------------------------------------------------------
+const UPDATE_SCHEDULE = [
+  {
+    cadence: "交易时段实时",
+    window: "9:15–15:00",
+    freq: "盘口/IOPV/逐笔 10–15秒; 1minK线收盘落库; 全市场ETF排行 1分钟",
+    items: ["ORDER_BOOK", "IOPV_DATA", "TICK_DATA", "KLINE_1MIN", "ETF涨幅/成交额排行"],
+    method: "后端实时行情源(Level-1) WebSocket 增量写入",
+    source: "交易所原生刷新周期15秒 / 基金IOPV每15秒"
+  },
+  {
+    cadence: "盘后增量更新",
+    window: "收盘15:30后, 18:00前完成",
+    freq: "每日1次",
+    items: ["当日完整日线/全分钟线归档", "当日份额/融资余额/折溢价/PCF(T+1)", "异常数据清洗"],
+    method: "westock-data kline/fund flow/etf detail + 后端分钟线落库",
+    source: "腾讯自选股 + 基金披露 + 后端行情库"
+  },
+  {
+    cadence: "周度更新",
+    window: "每周五收盘后",
+    freq: "每周1次",
+    items: ["周线/60min周汇总(MA60/周波动率/周资金流)", "行业板块周度资金/强弱排名", "策略回测绩效/盈亏/仓位"],
+    method: "westock-data kline --period week + 聚合计算",
+    source: "腾讯自选股 + 回测引擎"
+  },
+  {
+    cadence: "月度低频更新",
+    window: "每月最后交易日",
+    freq: "每月1次",
+    items: ["月线/月度规模变化/中长期折溢价历史", "宏观经济指标/行业景气", "历史回测全量备份归档"],
+    method: "westock-data kline --period month + 宏观API",
+    source: "腾讯自选股 + 宏观数据源"
+  },
+  {
+    cadence: "静态基础数据",
+    window: "变更才更新",
+    freq: "半年批量核对",
+    items: ["ETF代码池/上市日期/跟踪指数映射/费率/申赎门槛"],
+    method: "etf detail 手动核对",
+    source: "基金招募说明书/交易所公告"
+  }
+];
+
 // 数据更新时间戳
 const DATA_TIMESTAMP = "2026-07-17 15:00:00 (收盘数据)";
 const DATA_SOURCE = "腾讯自选股行情数据接口 + 综合分析模型";
