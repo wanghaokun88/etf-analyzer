@@ -689,46 +689,40 @@ const MACRO_SECTOR = {
 // ---------------------------------------------------------------------
 // 5档更新节奏配置 (数据管线调度)
 // ---------------------------------------------------------------------
+// 更新节奏：交易日 4 个固定时点全面快照（不再是实时连续刷新）
+// 每个时点采集：基本面(ETF详情) + 技术面(日/周/月K线) + 消息面(新闻) + 资金面(主力流向) + 量能
 const UPDATE_SCHEDULE = [
   {
-    cadence: "交易时段实时",
-    window: "9:15–15:00",
-    freq: "盘口/IOPV/逐笔 10–15秒; 1minK线收盘落库; 全市场ETF排行 1分钟",
-    items: ["ORDER_BOOK", "IOPV_DATA", "TICK_DATA", "KLINE_1MIN", "ETF涨幅/成交额排行"],
-    method: "后端实时行情源(Level-1) WebSocket 增量写入",
-    source: "交易所原生刷新周期15秒 / 基金IOPV每15秒"
+    cadence: "① 09:31 开盘快照",
+    window: "交易日 09:31 (开盘后1分钟)",
+    freq: "每交易日 1 次",
+    items: ["基本面(ETF详情/规模/净值)", "技术面(日/周/月K线)", "消息面(新闻)", "资金面(主力净流入)"],
+    method: "WorkBuddy自动化: westock-data采集 → 更新data.js → 推送GitHub",
+    source: "腾讯自选股行情接口 + 综合分析模型"
   },
   {
-    cadence: "盘后增量更新",
-    window: "收盘15:30后, 18:00前完成",
-    freq: "每日1次",
-    items: ["当日完整日线/全分钟线归档", "当日份额/融资余额/折溢价/PCF(T+1)", "异常数据清洗"],
-    method: "westock-data kline/fund flow/etf detail + 后端分钟线落库",
-    source: "腾讯自选股 + 基金披露 + 后端行情库"
+    cadence: "② 11:31 午盘快照",
+    window: "交易日 11:31 (午盘收盘)",
+    freq: "每交易日 1 次",
+    items: ["基本面", "技术面", "消息面", "资金面(半日主力流向)"],
+    method: "WorkBuddy自动化: westock-data采集 → 更新data.js → 推送GitHub",
+    source: "腾讯自选股行情接口 + 综合分析模型"
   },
   {
-    cadence: "周度更新",
-    window: "每周五收盘后",
-    freq: "每周1次",
-    items: ["周线/60min周汇总(MA60/周波动率/周资金流)", "行业板块周度资金/强弱排名", "策略回测绩效/盈亏/仓位"],
-    method: "westock-data kline --period week + 聚合计算",
-    source: "腾讯自选股 + 回测引擎"
+    cadence: "③ 13:01 午后快照",
+    window: "交易日 13:01 (午后开盘后1分钟)",
+    freq: "每交易日 1 次",
+    items: ["基本面", "技术面", "消息面", "资金面"],
+    method: "WorkBuddy自动化: westock-data采集 → 更新data.js → 推送GitHub",
+    source: "腾讯自选股行情接口 + 综合分析模型"
   },
   {
-    cadence: "月度低频更新",
-    window: "每月最后交易日",
-    freq: "每月1次",
-    items: ["月线/月度规模变化/中长期折溢价历史", "宏观经济指标/行业景气", "历史回测全量备份归档"],
-    method: "westock-data kline --period month + 宏观API",
-    source: "腾讯自选股 + 宏观数据源"
-  },
-  {
-    cadence: "静态基础数据",
-    window: "变更才更新",
-    freq: "半年批量核对",
-    items: ["ETF代码池/上市日期/跟踪指数映射/费率/申赎门槛"],
-    method: "etf detail 手动核对",
-    source: "基金招募说明书/交易所公告"
+    cadence: "④ 16:00 收盘快照",
+    window: "交易日 16:00 (收盘后1小时)",
+    freq: "每交易日 1 次",
+    items: ["基本面", "技术面(含当日完整日线)", "消息面", "资金面(全日)"],
+    method: "WorkBuddy自动化: westock-data采集 → 更新data.js → 推送GitHub",
+    source: "腾讯自选股行情接口 + 综合分析模型"
   }
 ];
 
