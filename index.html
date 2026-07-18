@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ETF 多维度分析仪表盘</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="data.js"></script>
+  <script src="technical.js"></script>
+</head>
+<body>
+  <!-- 顶部导航 -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">📈</span>
+        <span class="logo-text">ETF 多维度分析仪表盘</span>
+      </div>
+      <div class="header-meta">
+        <span class="timestamp">数据更新: <strong id="dataTime"></strong></span>
+        <span class="data-source">来源: <strong id="dataSource"></strong></span>
+      </div>
+    </div>
+  </header>
+
+  <!-- 组合概览 -->
+  <section class="portfolio-overview">
+    <div class="section-title">
+      <span class="section-icon">📊</span>
+      <h2>持仓组合概览</h2>
+    </div>
+    <div class="portfolio-stats" id="portfolioStats"></div>
+    <div class="portfolio-table" id="portfolioTable"></div>
+  </section>
+
+  <!-- ETF 详细分析 -->
+  <div class="etf-tabs">
+    <div class="tab-bar" id="tabBar"></div>
+  </div>
+
+  <div class="etf-detail" id="etfDetail"></div>
+
+  <!-- 底部声明 -->
+  <footer class="footer">
+    <div class="footer-inner">
+      <p class="disclaimer">⚠️ 声明：本网站仅为个人投资研究工具，所有分析基于公开市场数据，不构成任何投资建议。投资有风险，决策需谨慎。</p>
+      <p class="footer-meta">数据来源: 腾讯自选股行情数据接口 + 综合分析模型 | 分析框架: 基本面/技术面/消息面/资金面/量能五维评估</p>
+      <p class="footer-tech">纯HTML+JS静态网站 · 部署于 Gitee Pages</p>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
