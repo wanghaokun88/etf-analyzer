@@ -236,18 +236,22 @@ function renderPnlStrip() {
   if (!MY_HOLDINGS.configured) {
     return `<div class="pnl-strip pnl-empty">⚠️ 持仓成本价未配置（当前为示例）。点击右上角 <b>「设置持仓成本」</b> 填入真实买入价与份额（数据存本浏览器），分组1 将立即显示真实盈亏 / 止损止盈 / 减仓提示。</div>`;
   }
+  const pf = RiskEngine.getPortfolio();
   const cells = ETF_GROUPS.holdings.codes.map(code => {
     const pnl = RiskEngine.getHoldingPnl(code);
     if (!pnl) return '';
     const cls = pnl.profitPct >= 0 ? 'up' : 'down';
     const hit = pnl.profitPct <= THRESHOLDS.holding.stopLossPct ? 'hit-stop' : (pnl.profitPct >= THRESHOLDS.holding.takeProfitPct ? 'hit-tp' : '');
-    return `<div class="pnl-cell ${hit}">
-      <div class="pnl-name">${QUOTE_DATA[code].name}</div>
+    const heavy = pnl.weight != null && pnl.weight > THRESHOLDS.holding.weightHeavy;
+    return `<div class="pnl-cell ${hit} ${heavy ? 'heavy' : ''}">
+      <div class="pnl-name">${QUOTE_DATA[code].name}${heavy ? '<span class="heavy-tag">仓位过重</span>' : ''}</div>
       <div class="pnl-pct ${cls}">${fmtPct(pnl.profitPct)}</div>
+      <div class="pnl-line">市值 ¥${pnl.marketValue.toLocaleString()} · 仓位 ${pnl.weight != null ? pnl.weight.toFixed(1) : '—'}%</div>
       <div class="pnl-line">止损 ${pnl.stopLoss} / 止盈 ${pnl.takeProfit}</div>
     </div>`;
   }).join('');
-  return `<div class="pnl-strip"><div class="pnl-title">持仓盈亏 · 止损止盈（成本 ${MY_HOLDINGS.configured ? '已配置' : '示例'}）</div><div class="pnl-cells">${cells}</div></div>`;
+  const total = pf ? pf.total.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '—';
+  return `<div class="pnl-strip"><div class="pnl-title">持仓盈亏 · 止损止盈 · 仓位（组合市值 ¥${total}）</div><div class="pnl-cells">${cells}</div></div>`;
 }
 
 function renderGroupTable(r, mode) {
@@ -272,7 +276,7 @@ function renderGroupTable(r, mode) {
       colExtra = `${qd.aumChangePct >= 0 ? '+' : ''}${qd.aumChangePct}%`;
     }
     html += `<tr onclick="openDetail('${it.code}')" class="grp-row">
-      <td class="gt-etf"><b>${it.name}</b><span class="gt-code">${it.fullCode}</span></td>
+      <td class="gt-etf"><b>${it.name}</b><span class="gt-code">${it.fullCode}</span>${it.pnl && it.pnl.weight != null && it.pnl.weight > THRESHOLDS.holding.weightHeavy ? '<span class="heavy-badge">仓位过重</span>' : ''}</td>
       <td>${q.price.toFixed(3)}</td>
       <td class="${cCls}">${fmtPct(it.changePct)}</td>
       <td>${riskBadge(it.grade)}</td>
@@ -386,16 +390,22 @@ function renderEtfDetail(code) {
   if (currentEtfGroup === 'holdings') {
     const pnl = ev.pnl;
     if (pnl) {
-      html += `<div class="section-title"><span class="section-icon">💼</span><h2>持仓盈亏 / 止损止盈</h2></div>`;
       const pcls = pnl.profitPct >= 0 ? 'up' : 'down';
+      const fee = (typeof FEE_RATE !== 'undefined' && FEE_RATE[code] != null) ? FEE_RATE[code] : null;
+      const flagsHtml = (ev.holdingFlags && ev.holdingFlags.length) ? `<div class="hold-flags">${ev.holdingFlags.map(f => `<span class="hold-flag flag-${f.level}"><b>${f.label}</b>：${f.text}</span>`).join('')}</div>` : '';
+      const sectorHtml = ev.sectorWeak ? `<div class="sector-switch">⚠️ 同赛道「${ev.sectorName}」中本标的性价比偏弱，建议切换至 <b>${ev.sectorBest}</b></div>` : '';
+      html += `<div class="section-title"><span class="section-icon">💼</span><h2>持仓盈亏 / 止损止盈 / 仓位</h2></div>`;
       html += `<div class="pnl-detail">
         <div class="pnl-detail-item"><span>成本价</span><b>${pnl.cost}</b></div>
         <div class="pnl-detail-item"><span>现价</span><b>${q.price.toFixed(3)}</b></div>
         <div class="pnl-detail-item"><span>持仓</span><b>${pnl.shares.toLocaleString()}份</b></div>
+        <div class="pnl-detail-item"><span>持仓市值</span><b>¥${pnl.marketValue.toLocaleString()}</b></div>
+        <div class="pnl-detail-item"><span>占总仓位</span><b class="${pnl.weight != null && pnl.weight > THRESHOLDS.holding.weightHeavy ? 'down' : ''}">${pnl.weight != null ? pnl.weight.toFixed(1) : '—'}%</b></div>
         <div class="pnl-detail-item"><span>浮动盈亏</span><b class="${pcls}">${pnl.profit >= 0 ? '+' : ''}${pnl.profit.toFixed(0)}元 (${fmtPct(pnl.profitPct)})</b></div>
-        <div class="pnl-detail-item"><span>止损线(-8%)</span><b class="down">${pnl.stopLoss}</b></div>
-        <div class="pnl-detail-item"><span>止盈线(+20%)</span><b class="up">${pnl.takeProfit}</b></div>
-      </div>`;
+        <div class="pnl-detail-item"><span>止损线(${THRESHOLDS.holding.stopLossPct}%)</span><b class="down">${pnl.stopLoss}</b></div>
+        <div class="pnl-detail-item"><span>止盈线(+${THRESHOLDS.holding.takeProfitPct}%)</span><b class="up">${pnl.takeProfit}</b></div>
+        ${fee != null ? `<div class="pnl-detail-item"><span>年费率</span><b>${fee}%</b></div>` : ''}
+      </div>${flagsHtml}${sectorHtml}`;
     }
   }
 
