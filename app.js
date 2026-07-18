@@ -762,7 +762,7 @@ function getRealtimePanelHtml(code) {
 
   return `<div class="realtime-grid">
     <div class="realtime-card order-book-card">
-      <div class="panel-title">📊 Level-1 五档盘口 <span class="realtime-badge">实时需后端源</span></div>
+      <div class="panel-title">📊 Level-1 五档盘口 <span class="realtime-badge">交易日4时点快照</span></div>
       <table class="order-book-table">
         <thead><tr><th>档位</th><th>价格</th><th>挂单量</th></tr></thead>
         <tbody>${asksHtml}</tbody>
@@ -772,7 +772,7 @@ function getRealtimePanelHtml(code) {
       <div class="ob-meta">量比 ${ob.volumeRatio} · 振幅 ${ob.amplitude}% · 换手 ${ob.turnoverRate}% · 外盘 ${ob.externalVol.toLocaleString()} / 内盘 ${ob.internalVol.toLocaleString()}</div>
     </div>
     <div class="realtime-card iopv-card">
-      <div class="panel-title">💎 IOPV 实时净值 <span class="realtime-badge">实时需后端源</span></div>
+      <div class="panel-title">💎 IOPV 实时净值 <span class="realtime-badge">交易日4时点快照</span></div>
       <div class="iopv-main">
         <div class="iopv-row"><span>基金净值(IOPV)</span><b>${iopv.iopv.toFixed(4)}</b></div>
         <div class="iopv-row"><span>单位净值(NAV)</span><b>${iopv.nav.toFixed(4)}</b></div>
@@ -782,7 +782,7 @@ function getRealtimePanelHtml(code) {
       <div class="iopv-arb ${arbCls}">${arbText}${iopv.arbitrageSpace ? ` (|${iopv.premiumDeviation}|% > 0.5%)` : ''}</div>
     </div>
     <div class="realtime-card tick-card">
-      <div class="panel-title">⚡ 分时逐笔成交 <span class="realtime-badge">实时需后端源</span></div>
+      <div class="panel-title">⚡ 分时逐笔成交 <span class="realtime-badge">交易日4时点快照</span></div>
       <div class="tick-row"><span>主动买入</span><b class="up">${tick.activeBuy}亿</b></div>
       <div class="tick-row"><span>主动卖出</span><b class="down">${tick.activeSell}亿</b></div>
       <div class="tick-row"><span>主力净流入</span><b style="color:${tick.netInflow >= 0 ? 'var(--color-up)' : 'var(--color-down)'}">${tick.netInflow >= 0 ? '+' : ''}${tick.netInflow}亿</b></div>
@@ -867,14 +867,14 @@ function renderDataArchitecture() {
   const container = document.getElementById('dataArchitecture');
   if (!container) return;
   const cats = [
-    { n: '1. 实时盘口高频', items: ['Level-1五档盘口', 'IOPV实时净值', '分时逐笔成交', '1分钟K线快照'] },
+    { n: '1. 实盘快照(4时点)', items: ['Level-1五档盘口(快照)', 'IOPV实时净值(快照)', '分时逐笔成交(快照)', '当日K线快照'] },
     { n: '2. 多周期历史K线', items: ['5/15/30/60分钟(前复权)', '日/周/月线(前复权)', 'OHLC+成交量+额', '回测/训练基底'] },
     { n: '3. ETF专属基本面资金', items: ['总/流通份额', 'PCF申赎清单', '折溢价率/偏离', '融资余额/融券余量', '跟踪指数行情'] },
     { n: '4. 宏观&板块对照', items: ['行业板块涨跌/资金流', '宽基基准', '大盘情绪指标', '行业宏观催化'] }
   ];
-  let html = `<div class="section-title"><span class="section-icon">🗂️</span><h2>数据架构 v2.0 — 4大类数据 + 5档更新节奏</h2></div>`;
+  let html = `<div class="section-title"><span class="section-icon">🗂️</span><h2>数据架构 v2.0 — 4大类数据 + 4时点更新节奏</h2></div>`;
   html += `<div class="arch-cat-grid">${cats.map(c => `<div class="arch-cat-card"><div class="arch-cat-title">${c.n}</div><ul>${c.items.map(i => `<li>${i}</li>`).join('')}</ul></div>`).join('')}</div>`;
-  html += `<div class="arch-sched-title">5档更新节奏</div><div class="arch-sched">`;
+  html += `<div class="arch-sched-title">4时点更新节奏（交易日自动刷新）</div><div class="arch-sched">`;
   UPDATE_SCHEDULE.forEach(s => {
     html += `<div class="arch-sched-card">
       <div class="arch-sched-head"><span class="arch-sched-cadence">${s.cadence}</span><span class="arch-sched-window">${s.window}</span></div>
