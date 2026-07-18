@@ -1009,6 +1009,36 @@ body {
 .detail-close { position: absolute; top: 14px; right: 16px; border: none; background: #f1f3f5; width: 32px; height: 32px; border-radius: 50%; font-size: 16px; cursor: pointer; color: var(--text-secondary); }
 .detail-close:hover { background: #e9ecef; }
 
+/* ---------- 持仓成本编辑按钮 + 弹层 ---------- */
+.hdr-btn {
+  border: 1px solid var(--accent-blue, #2f6fed);
+  background: #fff; color: var(--accent-blue, #2f6fed);
+  padding: 5px 12px; border-radius: 20px; font-size: 13px; cursor: pointer;
+  transition: all .15s ease; white-space: nowrap;
+}
+.hdr-btn:hover { background: var(--accent-blue, #2f6fed); color: #fff; }
+.hdr-btn.configured { border-color: #27ae60; color: #27ae60; }
+.hdr-btn.configured:hover { background: #27ae60; color: #fff; }
+
+.holdings-modal { max-width: 760px; }
+.he-sub { color: var(--text-secondary); font-size: 13px; margin: 0 0 14px; line-height: 1.6; }
+.he-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.he-table th, .he-table td { padding: 9px 10px; text-align: left; border-bottom: 1px solid #eee; }
+.he-table thead th { background: #f7f8fa; color: var(--text-secondary); font-weight: 600; font-size: 13px; }
+.he-name { font-weight: 600; }
+.he-code { display: block; font-size: 11px; color: #999; font-weight: 400; margin-top: 2px; }
+.he-price { font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.he-input { width: 100%; min-width: 90px; padding: 7px 9px; border: 1px solid #d0d7de; border-radius: 7px; font-size: 14px; box-sizing: border-box; }
+.he-input:focus { outline: none; border-color: var(--accent-blue, #2f6fed); box-shadow: 0 0 0 3px rgba(47,111,237,.12); }
+.he-actions { display: flex; align-items: center; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+.he-btn { padding: 8px 18px; border-radius: 8px; border: 1px solid #d0d7de; background: #fff; cursor: pointer; font-size: 14px; transition: all .15s; }
+.he-btn:hover { background: #f3f4f6; }
+.he-save { background: var(--accent-blue, #2f6fed); color: #fff; border-color: var(--accent-blue, #2f6fed); }
+.he-save:hover { background: #2559c9; }
+.he-reset { color: #e74c3c; border-color: #f3c0b8; }
+.he-reset:hover { background: #fdecea; }
+.he-msg { font-size: 13px; margin-left: 4px; }
+
 /* 持仓盈亏明细(弹层) */
 .pnl-detail { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px,1fr)); gap: 10px; margin-top: 12px; }
 .pnl-detail-item { background: #fafbfc; border: 1px solid var(--border-color); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; }
