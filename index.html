@@ -9,6 +9,7 @@
   <script src="data.js"></script>
   <script src="technical.js"></script>
   <script src="riskengine.js"></script>
+  <script src="marketengine.js"></script>
 </head>
 <body>
   <header class="header">
@@ -25,6 +26,9 @@
     </div>
   </header>
 
+  <!-- 全局大势量化面板（置顶） -->
+  <div id="globalTrend"></div>
+
   <!-- 双分析模式切换 -->
   <section class="mode-switch">
     <div class="mode-switch-inner">
@@ -33,6 +37,9 @@
       <span class="mode-desc" id="modeDesc"></span>
     </div>
   </section>
+
+  <!-- 4时点独立面板切换 -->
+  <nav class="timepoint-nav" id="timePointNav"></nav>
 
   <!-- 3个独立分组导航 -->
   <nav class="group-nav" id="groupNav"></nav>
@@ -64,6 +71,14 @@
     <div class="detail-modal holdings-modal">
       <button class="detail-close" onclick="closeHoldingsEditor()">✕</button>
       <div id="holdingsEditor"></div>
+    </div>
+  </div>
+
+  <!-- 持仓分组解锁弹窗 -->
+  <div class="detail-overlay" id="unlockOverlay" onclick="if(event.target===this)closeUnlock()">
+    <div class="detail-modal unlock-modal">
+      <button class="detail-close" onclick="closeUnlock()">✕</button>
+      <div id="unlockBox"></div>
     </div>
   </div>
 
