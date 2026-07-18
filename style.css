@@ -959,6 +959,19 @@ body {
 .pnl-pct { font-size: 18px; font-weight: 800; margin: 2px 0; }
 .pnl-line { font-size: 11px; color: var(--text-light); }
 
+/* 持仓盈亏条 - 仓位过重 / 规则标签 */
+.pnl-cell.heavy { border-color: #f0a500; background: #fff7e6; }
+.heavy-tag { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 10px; background: #f0a500; color: #fff; font-size: 10px; font-weight: 700; vertical-align: middle; }
+.heavy-badge { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 4px; background: #f0a500; color: #fff; font-size: 11px; font-weight: 700; }
+.hold-flags { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
+.hold-flag { padding: 6px 12px; border-radius: 8px; font-size: 12px; line-height: 1.4; border: 1px solid; }
+.hold-flag b { margin-right: 4px; }
+.flag-deep-red { background: #fdecee; border-color: #e74c3c; color: #c0392b; }
+.flag-yellow { background: #fff8e1; border-color: #f1c40f; color: #b7950b; }
+.flag-info { background: #eaf2ff; border-color: #9bb8f0; color: #2f6fed; }
+.sector-switch { margin-top: 10px; padding: 10px 14px; background: #fff7e6; border: 1px solid #ffe0a0; border-left: 4px solid #f0a500; border-radius: 8px; font-size: 13px; color: #8a5a00; }
+.sector-switch b { color: #c0392b; }
+
 /* 分组表格 */
 .group-table-wrap { overflow-x: auto; margin-top: 14px; border: 1px solid var(--border-color); border-radius: var(--radius-md); background: var(--bg-card); box-shadow: var(--shadow-sm); }
 .group-table { width: 100%; border-collapse: collapse; font-size: 13px; }
