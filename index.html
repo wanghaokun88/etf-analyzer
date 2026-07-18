@@ -20,6 +20,7 @@
       <div class="header-meta">
         <span class="timestamp">数据更新: <strong id="dataTime"></strong></span>
         <span class="data-source">来源: <strong id="dataSource"></strong></span>
+        <button class="hdr-btn" id="btnEditHoldings" onclick="openHoldingsEditor()">⚙️ 设置持仓成本</button>
       </div>
     </div>
   </header>
@@ -55,6 +56,14 @@
     <div class="detail-modal">
       <button class="detail-close" onclick="closeDetail()">✕</button>
       <div id="etfDetail"></div>
+    </div>
+  </div>
+
+  <!-- 持仓成本编辑弹层 -->
+  <div class="detail-overlay" id="holdingsOverlay" onclick="if(event.target===this)closeHoldingsEditor()">
+    <div class="detail-modal holdings-modal">
+      <button class="detail-close" onclick="closeHoldingsEditor()">✕</button>
+      <div id="holdingsEditor"></div>
     </div>
   </div>
 
