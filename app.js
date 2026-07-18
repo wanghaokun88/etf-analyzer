@@ -20,6 +20,9 @@ const HOLDINGS_EXAMPLE = {
   sz159732: { cost: 0.758, shares: 10000 }
 };
 
+// ========== 全局状态 ==========
+let currentTimePoint = '1600';       // 0931 | 1131 | 1331 | 1600
+
 // ========== 初始化 ==========
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('dataTime').textContent = DATA_TIMESTAMP;
@@ -28,8 +31,11 @@ document.addEventListener('DOMContentLoaded', () => {
   updateHoldingsBtn();
   renderModeSwitch();
   renderGroupNav();
-  renderGroup(currentGroup, currentMode);
+  renderGlobalTrend(currentTimePoint);
+  renderTimePointNav();
+  renderMain();
   renderDataArchitecture();
+  maybeShowUnlockPopup();
 });
 
 // ========== 持仓管理(本地: 增删标的 / 加仓减仓 / 改成本) ==========
@@ -96,7 +102,7 @@ function heCommit(msg) {
   try { localStorage.setItem(HOLDINGS_KEY, JSON.stringify(payload)); } catch (e) {}
   updateHoldingsBtn();
   renderGroupNav();
-  renderGroup(currentGroup, currentMode);
+  renderMain();
   if (msg) setHeMsg(msg, '#27ae60');
 }
 
@@ -266,7 +272,7 @@ function heReset() {
   MY_HOLDINGS.configured = false;
   updateHoldingsBtn();
   renderGroupNav();
-  renderGroup(currentGroup, currentMode);
+  renderMain();
   closeHoldingsEditor();
 }
 
@@ -297,7 +303,7 @@ function renderModeSwitch() {
 function setMode(mode) {
   currentMode = mode;
   renderModeSwitch();
-  renderGroup(currentGroup, currentMode);
+  renderMain();
 }
 
 // ========== 分组导航 ==========
@@ -313,7 +319,7 @@ function renderGroupNav() {
 function setGroup(gid) {
   currentGroup = gid;
   renderGroupNav();
-  renderGroup(currentGroup, currentMode);
+  renderMain();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -349,6 +355,9 @@ function renderGroup(groupId, mode) {
   html += `<div class="group-risk-note" style="border-left:4px solid ${RISK_GRADES[r.groupGrade].color}">
     ${groupRiskNarrative(r, mode)}
   </div>`;
+
+  // 分组阈值说明栏(模块2)
+  if (groupId === 'star' || groupId === 'broad') html += renderThresholdBar(groupId);
 
   // 持仓分组: 盈亏条
   if (isHolding) html += renderPnlStrip();
@@ -403,9 +412,11 @@ function renderPnlStrip() {
 }
 
 function renderGroupTable(r, mode) {
+  const isHolding = r.group.id === 'holdings';
   const headers = mode === 'shortTerm'
     ? ['ETF', '最新价', '涨跌幅', '风险', '主力净流入(亿)', 'RSI(14)', '综合分', '首要建议']
     : ['ETF', '最新价', '涨跌幅', '风险', 'PE分位', '规模增长', '综合分', '首要建议'];
+  if (isHolding) headers.splice(headers.length - 1, 0, '微观大势');
   let html = `<div class="group-table-wrap"><table class="group-table"><thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>`;
   r.items.forEach(it => {
     const q = QUOTE_DATA[it.code];
@@ -423,6 +434,16 @@ function renderGroupTable(r, mode) {
       colMid = `<span class="${v.pePercentile <= 30 ? 'up' : v.pePercentile >= 70 ? 'down' : ''}">${v.pePercentile}%</span>`;
       colExtra = `${qd.aumChangePct >= 0 ? '+' : ''}${qd.aumChangePct}%`;
     }
+    let microCell = '';
+    if (isHolding && it.microTrend) {
+      const mt = it.microTrend;
+      const blocked = MarketEngine.stageBlocksAdd(mt.stageKey);
+      microCell = `<td class="gt-micro">
+        <span class="micro-stage" style="color:${mt.riskColor}">${mt.stage}</span>
+        <span class="micro-bear">走熊 ${mt.bearProb}%</span>
+        ${blocked ? '<span class="micro-block">⛔禁加仓</span>' : ''}
+      </td>`;
+    }
     html += `<tr onclick="openDetail('${it.code}')" class="grp-row">
       <td class="gt-etf"><b>${it.name}</b><span class="gt-code">${it.fullCode}</span>${it.pnl && it.pnl.weight != null && it.pnl.weight > THRESHOLDS.holding.weightHeavy ? '<span class="heavy-badge">仓位过重</span>' : ''}</td>
       <td>${q.price.toFixed(3)}</td>
@@ -431,11 +452,39 @@ function renderGroupTable(r, mode) {
       <td>${colMid}</td>
       <td>${colExtra}</td>
       <td><span class="score-pill" style="background:${scoreColor(it.score)}">${it.score}</span></td>
+      ${microCell}
       <td class="gt-adv">${topAdv ? `<span class="adv-tag prio-${topAdv.priority}">${topAdv.action}</span>` : '—'}</td>
     </tr>`;
   });
   html += `</tbody></table></div>`;
   return html;
+}
+
+// 分组阈值说明栏(模块2)
+function renderThresholdBar(groupId) {
+  const t = GROUP_THRESHOLDS[groupId];
+  if (!t) return '';
+  let items = [];
+  if (groupId === 'star') {
+    items = [
+      `折溢价安全 ±${t.premiumSafe}%｜溢价>${t.premiumDeepRed}% 深红`,
+      `流动性底线 日均≥${t.liquidityFloor}万｜<${t.liquidityWatch}万 浅红观望`,
+      `科创走熊触发 阶段高点回撤≥${t.kechuangBearDrawdown}%`,
+      `前十大权重集中度>${t.top10ConcentrationHigh}% 高波动风险`,
+      `估值分位>${t.valuationBanDca}% 禁止长期重仓定投`
+    ];
+  } else {
+    items = [
+      `折溢价安全 ±${t.premiumSafe}%｜溢价>${t.premiumWarn}% 预警`,
+      `流动性安全线 近20日日均≥${t.liquiditySafe}万`,
+      `估值分位<${t.valuationAddDca}% 定投加仓｜>${t.valuationReduce}% 减底仓`,
+      `前十大权重<${t.top10ConcentrationSafe}% 无集中波动风险`
+    ];
+  }
+  return `<div class="threshold-bar">
+    <span class="threshold-title">📐 ${t.label} 固定阈值</span>
+    ${items.map(i => `<span class="threshold-item">${i}</span>`).join('')}
+  </div>`;
 }
 
 function adviceCardHtml(it, mode) {
@@ -534,6 +583,24 @@ function renderEtfDetail(code) {
       <div class="signal-note">${s.note}</div>
     </div>`).join('') + `</div>`;
 
+  // 单只微观大势(模块1.3)
+  if (ev.microTrend) {
+    const mt = ev.microTrend;
+    const blocked = MarketEngine.stageBlocksAdd(mt.stageKey);
+    html += `<div class="section-title"><span class="section-icon">🌐</span><h2>单只微观大势（${currentEtfGroup === 'holdings' ? '持仓标的' : '标的'}自身行情阶段）</h2></div>`;
+    html += `<div class="micro-trend-card">
+      <div class="mt-main">
+        <span class="mt-stage" style="color:${mt.riskColor}">${mt.stage}</span>
+        <span class="mt-bear">独立走熊概率 <b>${mt.bearProb}%</b></span>
+        <span class="mt-risk" style="background:${mt.riskColor}">${mt.riskLevel}风险</span>
+        ${blocked ? '<span class="mt-block">⛔ 顶部出货/下跌趋势 · 严禁加仓定投</span>' : ''}
+      </div>
+      <div class="mt-row"><span>阶段预判周期</span><b>${mt.durationShort} / ${mt.durationMid}</b></div>
+      <div class="mt-factors">${mt.factors.map(f => `<span class="mt-factor ${f.positive ? 'pos' : 'neg'}">${f.label} ${f.value}</span>`).join('')}</div>
+      <div class="mt-note">${mt.note}</div>
+    </div>`;
+  }
+
   // 持仓盈亏(分组1)
   if (currentEtfGroup === 'holdings') {
     const pnl = ev.pnl;
@@ -552,6 +619,8 @@ function renderEtfDetail(code) {
         <div class="pnl-detail-item"><span>浮动盈亏</span><b class="${pcls}">${pnl.profit >= 0 ? '+' : ''}${pnl.profit.toFixed(0)}元 (${fmtPct(pnl.profitPct)})</b></div>
         <div class="pnl-detail-item"><span>止损线(${THRESHOLDS.holding.stopLossPct}%)</span><b class="down">${pnl.stopLoss}</b></div>
         <div class="pnl-detail-item"><span>止盈线(+${THRESHOLDS.holding.takeProfitPct}%)</span><b class="up">${pnl.takeProfit}</b></div>
+        <div class="pnl-detail-item next-day"><span>次日止损参考</span><b class="down">${pnl.stopLoss}</b></div>
+        <div class="pnl-detail-item next-day"><span>次日止盈参考</span><b class="up">${pnl.takeProfit}</b></div>
         ${fee != null ? `<div class="pnl-detail-item"><span>年费率</span><b>${fee}%</b></div>` : ''}
       </div>${flagsHtml}${sectorHtml}`;
     }
@@ -577,6 +646,10 @@ function renderEtfDetail(code) {
     <div class="tech-detail-item"><div class="tech-detail-label">份额变动</div><div class="tech-detail-value" style="color:${es.shareChangePct >= 0 ? 'var(--color-up)' : 'var(--color-down)'}">${es.shareChangePct >= 0 ? '+' : ''}${es.shareChangePct}%</div></div>
     <div class="tech-detail-item"><div class="tech-detail-label">跟踪指数</div><div class="tech-detail-value">${es.trackingIndex.name}</div></div>
   </div>`;
+
+  // 基金长期核心指标(模块3)
+  html += `<div class="section-title"><span class="section-icon">🏛️</span><h2>基金长期核心指标（补齐）</h2></div>`;
+  html += fundLongTermHtml(code);
 
   // 多周期K线
   html += `<div class="section-title"><span class="section-icon">📉</span><h2>多周期K线（前复权）</h2></div>`;
@@ -759,3 +832,268 @@ function renderDataArchitecture() {
   html += `</div></details>`;
   c.innerHTML = html;
 }
+
+// =====================================================================
+// 全局大势面板 + 4时点独立面板（模块1 / 模块4）
+// =====================================================================
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+// 4时点板块特征增量（确定性，模拟盘中刷新；13:31 科创触发阶段反转演示）
+const TP_DELTAS = {
+  '0931': { broad: {}, kechuang: {} },
+  '1131': { broad: { drawdownPct: -2, fund60dInflow: -30, adx: 1, valuationPct: 1 }, kechuang: { drawdownPct: 0, fund60dInflow: -40, adx: 1, valuationPct: 2 } },
+  '1331': { broad: { drawdownPct: -5, fund60dInflow: -80, adx: 2, valuationPct: 2 }, kechuang: { drawdownPct: -3, fund60dInflow: -120, adx: 2, valuationPct: 3 } }
+};
+
+// 板块大势（按时点增量重算）
+function sectorTrendAt(sectorKey, tpKey) {
+  const base = MARKET_TREND_SEED[sectorKey];
+  const d = (TP_DELTAS[tpKey] && TP_DELTAS[tpKey][sectorKey]) || {};
+  const f = Object.assign({}, base);
+  // 增量叠加（非替换）：仅对数值字段叠加时点修正
+  ['drawdownPct', 'fund60dInflow', 'adx', 'valuationPct'].forEach(k => {
+    if (d[k] != null) f[k] = (base[k] || 0) + d[k];
+  });
+  const stage = MarketEngine._internal.detectStage(f);
+  const bearProb = MarketEngine._internal.computeBearProb(stage, f);
+  const riskLevel = MarketEngine._internal.matchRisk(bearProb, stage, f.valuationLow);
+  const isKechuang = sectorKey === 'kechuang';
+  const dur = MarketEngine._internal.estimateDuration(stage, isKechuang);
+  return { sectorKey, label: base.label, isKechuang, stage, stageKey: stage, bearProb, riskLevel, riskColor: MarketEngine.RISK[riskLevel].color, durationShort: dur.shortText, durationMid: dur.midText, shortDays: dur.shortDays, midMonths: dur.midMonths, valuationLow: f.valuationLow };
+}
+
+// 全局大势（按时点）
+function globalTrendAt(tpKey) {
+  const b = sectorTrendAt('broad', tpKey), k = sectorTrendAt('kechuang', tpKey);
+  const bearProb = Math.round(clamp(b.bearProb * 0.45 + k.bearProb * 0.55, 2, 98));
+  const weaker = k.bearProb >= b.bearProb ? k : b;
+  const riskLevel = MarketEngine._internal.matchRisk(bearProb, weaker.stageKey, b.valuationLow && k.valuationLow);
+  const dur = MarketEngine._internal.estimateDuration(weaker.stageKey, weaker.isKechuang);
+  const factors = [
+    { label: '大盘走熊概率', value: b.bearProb + '%', positive: b.bearProb < 40 },
+    { label: '科创走熊概率', value: k.bearProb + '%', positive: k.bearProb < 40 },
+    { label: '大盘行情阶段', value: b.stage, positive: b.stageKey === 'uptrend' || b.stageKey === 'wash' },
+    { label: '科创行情阶段', value: k.stage, positive: k.stageKey === 'uptrend' || k.stageKey === 'wash' }
+  ];
+  return { bearProb, stage: weaker.stage, stageKey: weaker.stageKey, riskLevel, riskColor: MarketEngine.RISK[riskLevel].color, durationShort: dur.shortText, durationMid: dur.midText, sectors: { broad: b, kechuang: k }, factors, note: '周期时长仅为历史量化概率预判，若出现重大政策、外围极端行情，周期会缩短或延长；当前科创优先走弱、大盘相对抗跌。' };
+}
+
+function renderGlobalTrend(tpKey) {
+  const box = document.getElementById('globalTrend');
+  if (!box) return;
+  const g = globalTrendAt(tpKey);
+  const extreme = MarketEngine.isGlobalExtreme(g);
+  const riskColor = g.riskColor;
+  const sectorCard = (s) => `<div class="gt-sector ${s.isKechuang ? 'kc' : 'bd'}">
+      <div class="gts-name">${s.label}</div>
+      <div class="gts-risk" style="color:${s.riskColor}">${s.riskLevel}</div>
+      <div class="gts-bear">走熊 ${s.bearProb}%</div>
+      <div class="gts-stage">${s.stage}</div>
+      <div class="gts-dur">${s.durationShort}<br><span>${s.durationMid}</span></div>
+    </div>`;
+  const factorHtml = g.factors.map(f => `<span class="gf-factor ${f.positive ? 'pos' : 'neg'}">${f.label}: ${f.value}</span>`).join('');
+  const tpLabel = (TIME_POINTS.find(t => t.key === tpKey) || {}).label || '';
+  box.innerHTML = `<div class="global-trend ${extreme ? 'extreme' : ''}">
+    <div class="gt-head">
+      <span class="gt-title">🌐 全局大势量化面板（置顶）</span>
+      <span class="gt-tp">${tpLabel} · ${MARKET_TREND_SEED.asOf}</span>
+    </div>
+    ${extreme ? `<div class="gt-extreme-banner">⛔ 全局【极高风险】：全站屏蔽加仓 / 定投加仓，统一降仓防御（无视单只折价、资金流入等利好）</div>` : ''}
+    <div class="gt-grid">
+      <div class="gt-cell gt-main">
+        <div class="gt-label">全市场整体风险等级</div>
+        <div class="gt-value" style="color:${riskColor}">${g.riskLevel}</div>
+      </div>
+      <div class="gt-cell">
+        <div class="gt-label">全市场走熊概率</div>
+        <div class="gt-value">${g.bearProb}%</div>
+        <div class="gt-bar"><span style="width:${g.bearProb}%;background:${riskColor}"></span></div>
+      </div>
+      <div class="gt-cell">
+        <div class="gt-label">大盘宽基行情阶段</div>
+        <div class="gt-value-sm">${g.stage}</div>
+      </div>
+      <div class="gt-cell">
+        <div class="gt-label">阶段预估持续时间</div>
+        <div class="gt-value-sm">${g.durationShort}</div>
+        <div class="gt-value-sm2">${g.durationMid}</div>
+      </div>
+    </div>
+    <div class="gt-sectors">${sectorCard(g.sectors.broad)}${sectorCard(g.sectors.kechuang)}</div>
+    <div class="gt-factors"><b>量化因子佐证：</b>${factorHtml}</div>
+    <div class="gt-note">${g.note}</div>
+  </div>`;
+}
+
+function renderTimePointNav() {
+  const nav = document.getElementById('timePointNav');
+  if (!nav) return;
+  nav.innerHTML = TIME_POINTS.map(t => `<button class="tp-btn ${t.key === currentTimePoint ? 'active' : ''}" onclick="setTimePoint('${t.key}')">
+    <b>${t.label}</b><i>${t.desc}</i></button>`).join('');
+}
+function setTimePoint(tp) {
+  currentTimePoint = tp;
+  renderTimePointNav();
+  renderGlobalTrend(tp);
+  renderMain();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function renderMain() {
+  if (currentTimePoint === '1600') renderGroup(currentGroup, currentMode);
+  else renderTimePointPanel(currentTimePoint);
+}
+
+// 持仓组临时止损/止盈参考（11:31）
+function holdingTempLevels() {
+  if (!MY_HOLDINGS.configured) return [];
+  return ETF_GROUPS.holdings.codes.map(code => {
+    const p = RiskEngine.getHoldingPnl(code);
+    if (!p) return null;
+    const q = QUOTE_DATA[code];
+    return { code, name: q.name, price: q.price, tempStop: +(q.price * 0.98).toFixed(3), tempTp: +(q.price * 1.02).toFixed(3) };
+  }).filter(Boolean);
+}
+
+// 每组午后操作预案（11:31）
+function noonPlanForGroup(groupId, tpKey) {
+  const g = RiskEngine.evaluateGroup(groupId, 'shortTerm');
+  const kc = sectorTrendAt(groupId === 'star' ? 'kechuang' : 'broad', tpKey);
+  const hasArb = g.items.some(it => Math.abs(IOPV_DATA[it.code].premiumDeviation) > THRESHOLDS.shortTerm.premium.arb);
+  if (kc.bearProb >= 60) return { plan: '午后只减不加', desc: `板块走熊概率${kc.bearProb}%≥60，风险偏高，午后仅减仓不新开仓` };
+  if (hasArb) return { plan: '折价套利布局', desc: `存在折溢价偏离>0.5%标的，可关注折价套利` };
+  if (g.green > 0) return { plan: '午后分批低吸', desc: `存在${g.green}只绿-机会加仓标的，可逢低分批低吸` };
+  return { plan: '全程观望', desc: '多空信号中性，午后全程观望' };
+}
+
+function renderTimePointPanel(tpKey) {
+  const container = document.getElementById('groupView');
+  const tp = TIME_POINTS.find(t => t.key === tpKey);
+  const g = globalTrendAt(tpKey);
+  const extreme = MarketEngine.isGlobalExtreme(g);
+  let html = `<section class="group-section fade-in">`;
+
+  if (tpKey === '0931') {
+    // 开盘轻量化面板
+    html += `<div class="tp-head"><span class="tp-icon">🌅</span><h2>09:31 开盘轻量化独立面板</h2>${extreme ? '<span class="tp-extreme">今日禁止新建仓</span>' : ''}</div>`;
+    if (extreme) html += `<div class="tp-extreme-banner">🔴 全局极高风险：今日禁止新建仓，仅执行降仓防御</div>`;
+    html += `<div class="tp-summary">
+      <div class="tp-scell"><span>全局风险</span><b style="color:${g.riskColor}">${g.riskLevel}</b></div>
+      <div class="tp-scell"><span>大盘走熊</span><b>${g.sectors.broad.bearProb}%</b></div>
+      <div class="tp-scell"><span>科创走熊</span><b>${g.sectors.kechuang.bearProb}%</b></div>
+      <div class="tp-scell"><span>短线定性</span><b>${g.stage}</b></div>
+    </div>`;
+    html += `<div class="tp-section-title">分组极简数据（折溢价 / 量比 / 开盘成交额）</div>`;
+    Object.values(ETF_GROUPS).forEach(grp => {
+      const conclusion = grp.id === 'star' ? '当日回避' : (grp.id === 'holdings' ? (MY_HOLDINGS.configured ? '观察等待' : '观察等待') : '低吸候选');
+      const rows = grp.codes.map(code => {
+        const iopv = IOPV_DATA[code], ob = ORDER_BOOK[code], q = QUOTE_DATA[code];
+        const openAmt = Math.round(q.open * q.volume / 10000);
+        return `<tr><td>${q.name}</td><td class="${iopv.premiumRate < 0 ? 'up' : 'down'}">${iopv.premiumRate >= 0 ? '+' : ''}${iopv.premiumRate}%</td><td>${ob.volumeRatio}</td><td>${openAmt.toLocaleString()}万</td></tr>`;
+      }).join('');
+      html += `<div class="tp-group">
+        <div class="tp-group-head">${grp.icon} ${grp.name} <span class="tp-concl ${conclusion === '当日回避' ? 'avoid' : conclusion === '低吸候选' ? 'low' : 'wait'}">${conclusion}</span></div>
+        <div class="tp-table-wrap"><table class="tp-table"><thead><tr><th>ETF</th><th>折溢价</th><th>量比</th><th>开盘成交额</th></tr></thead><tbody>${rows}</tbody></table></div>
+      </div>`;
+    });
+  } else if (tpKey === '1131') {
+    // 午盘面板
+    html += `<div class="tp-head"><span class="tp-icon">☀️</span><h2>11:31 午盘独立分析面板</h2></div>`;
+    html += `<div class="tp-section-title">各组短线预估维持天数（10 交易日内）与多空定性</div>`;
+    Object.values(ETF_GROUPS).forEach(grp => {
+      const kc = sectorTrendAt(grp.id === 'star' ? 'kechuang' : 'broad', tpKey);
+      const bias = kc.stageKey === 'uptrend' || kc.stageKey === 'wash' ? '多头' : (kc.stageKey === 'top' || kc.stageKey === 'downtrend' ? '空头' : '震荡');
+      const plan = noonPlanForGroup(grp.id, tpKey);
+      html += `<div class="tp-group">
+        <div class="tp-group-head">${grp.icon} ${grp.name}</div>
+        <div class="tp-noon-row">
+          <span>短线维持 <b>${kc.shortDays[0]}-${kc.shortDays[1]}</b> 交易日</span>
+          <span>定性 <b class="${bias === '多头' ? 'up' : bias === '空头' ? 'down' : ''}">${bias}</b></span>
+          <span>午后预案 <b class="tp-plan">${plan.plan}</b></span>
+        </div>
+        <div class="tp-plan-desc">${plan.desc}</div>
+      </div>`;
+    });
+    if (MY_HOLDINGS.configured) {
+      const levels = holdingTempLevels();
+      html += `<div class="tp-section-title">持仓组 · 临时止损止盈参考价</div><div class="tp-table-wrap"><table class="tp-table"><thead><tr><th>ETF</th><th>现价</th><th>临时止损(-2%)</th><th>临时止盈(+2%)</th></tr></thead><tbody>`;
+      html += levels.map(l => `<tr><td>${l.name}</td><td>${l.price}</td><td class="down">${l.tempStop}</td><td class="up">${l.tempTp}</td></tr>`).join('');
+      html += `</tbody></table></div>`;
+    }
+  } else if (tpKey === '1331') {
+    // 午后校验面板
+    const kc1131 = sectorTrendAt('kechuang', '1131'), kc1331 = sectorTrendAt('kechuang', '1331');
+    const bd1131 = sectorTrendAt('broad', '1131'), bd1331 = sectorTrendAt('broad', '1331');
+    const reversed = (kc1131.stageKey !== kc1331.stageKey) || (bd1131.stageKey !== bd1331.stageKey) || Math.abs(kc1331.bearProb - kc1131.bearProb) >= 10;
+    html += `<div class="tp-head"><span class="tp-icon">🌤️</span><h2>13:31 午后开盘校验面板</h2></div>`;
+    if (reversed) {
+      html += `<div class="tp-reverse-banner" id="tpReverseBanner">⚠️ 趋势反转预警：走熊概率 / 行情阶段 / 折溢价较午盘大幅跳变，作废午盘全部操作预案！</div>`;
+      setTimeout(() => { const b = document.getElementById('tpReverseBanner'); if (b) b.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 300);
+    }
+    html += `<div class="tp-section-title">午后刷新 vs 午盘（剩余短线阶段时长 / 风险标签）</div>`;
+    Object.values(ETF_GROUPS).forEach(grp => {
+      const noon = sectorTrendAt(grp.id === 'star' ? 'kechuang' : 'broad', '1131');
+      const aft = sectorTrendAt(grp.id === 'star' ? 'kechuang' : 'broad', '1331');
+      const changed = noon.stageKey !== aft.stageKey || Math.abs(aft.bearProb - noon.bearProb) >= 10;
+      const cmd = changed ? '作废午盘预案，反向调仓' : '执行原有午盘预案';
+      html += `<div class="tp-group">
+        <div class="tp-group-head">${grp.icon} ${grp.name} ${changed ? '<span class="tp-changed">阶段跳变</span>' : ''}</div>
+        <div class="tp-noon-row">
+          <span>走熊 ${noon.bearProb}% → <b style="color:${aft.riskColor}">${aft.bearProb}%</b></span>
+          <span>阶段 <b>${aft.stage}</b></span>
+          <span>剩余短线 <b>${aft.shortDays[0]}-${aft.shortDays[1]}</b> 日</span>
+        </div>
+        <div class="tp-plan-desc">指令：<b class="${changed ? 'down' : 'up'}">${cmd}</b></div>
+      </div>`;
+    });
+  }
+
+  html += `<div class="grp-data-note">${tp.desc} · 数据由自动化在交易日 ${tp.label.split(' ')[0]} 刷新；全局大势置顶面板展示全维度结论。</div>`;
+  html += `</section>`;
+  container.innerHTML = html;
+}
+
+// =====================================================================
+// 基金长期核心指标（模块3）
+// =====================================================================
+function fundLongTermHtml(code) {
+  const d = ETF_DETAIL[code], qd = QUARTERLY_DATA[code], v = VALUATION_DATA[code];
+  const te1y = qd.trackError;
+  const te3y = (typeof TRACK_ERROR_3Y !== 'undefined' && TRACK_ERROR_3Y[code] != null) ? TRACK_ERROR_3Y[code] : te1y;
+  const feeTotal = (typeof FEE_RATE !== 'undefined' && FEE_RATE[code] != null) ? FEE_RATE[code] : 0.5;
+  const fb = (typeof FEE_BREAKDOWN !== 'undefined' && FEE_BREAKDOWN[code]) ? FEE_BREAKDOWN[code] : { mgmt: feeTotal, custody: 0 };
+  const established = d.established || '—';
+  const years = established !== '—' ? ((new Date('2026-07-17') - new Date(established)) / (365.25 * 24 * 3600 * 1000)).toFixed(1) : '—';
+  const size = d.size;
+  const mini = size < 0.5;
+  const pePct = v.pePercentile, pbPct = v.pbPercentile;
+  let guidance;
+  if (pePct < 30 && pbPct < 30) guidance = { cls: 'up', txt: 'PE/PB 双低（近10年分位<30%），处于历史低位，标准化动作：定投加仓' };
+  else if (pePct > 80 || pbPct > 80) guidance = { cls: 'down', txt: '估值分位偏高（>80%），标准化动作：减仓 / 观望，暂停长期重仓定投' };
+  else guidance = { cls: 'neutral', txt: '估值分位中性（30%-80%），标准化动作：正常定投 / 持有观察' };
+  const miniHtml = mini ? `<div class="fl-mini">⚠️ 迷你规模清盘预警：基金总规模 ${size}亿 &lt; 5000万，存在清盘风险</div>` : '';
+  return `<div class="fl-grid">
+    <div class="fl-card"><div class="fl-label">年化跟踪误差(1年)</div><div class="fl-value">${te1y}%</div></div>
+    <div class="fl-card"><div class="fl-label">年化跟踪误差(3年)</div><div class="fl-value">${te3y}%</div></div>
+    <div class="fl-card"><div class="fl-label">年费率(管理费+托管费)</div><div class="fl-value">${feeTotal}%<span class="fl-sub">(${fb.mgmt}+${fb.custody})</span></div></div>
+    <div class="fl-card"><div class="fl-label">基金成立年限</div><div class="fl-value">${years}年<span class="fl-sub">(${established})</span></div></div>
+    <div class="fl-card"><div class="fl-label">最新基金总规模</div><div class="fl-value ${mini ? 'down' : ''}">${size}亿</div></div>
+    <div class="fl-card"><div class="fl-label">指数PE/PB(近10年分位)</div><div class="fl-value">PE ${v.pe}(${v.pePercentile}%)<br>PB ${v.pb}(${v.pbPercentile}%)</div></div>
+  </div>
+  <div class="fl-guidance ${guidance.cls}">📌 估值标准化指引：${guidance.txt}</div>
+  ${miniHtml}`;
+}
+
+// =====================================================================
+// 持仓分组解锁弹窗（模块6）
+// =====================================================================
+function maybeShowUnlockPopup() {
+  if (MY_HOLDINGS.configured) return;
+  const box = document.getElementById('unlockBox');
+  if (box) box.innerHTML = `<h2>🔓 解锁持仓完整功能</h2>
+    <p class="he-sub">录入每只持仓 ETF 的<b>买入成本价</b>与<b>持有份额</b>后，分组1 将解锁：单只浮盈 / 浮亏百分比、单只持仓市值、单只仓位占账户总资金比例、仓位过重高亮、精准次日止盈止损参考价。</p>
+    <div class="he-actions"><button class="he-btn he-save" onclick="openHoldingsEditor()">立即录入持仓成本</button><button class="he-btn he-cancel" onclick="closeUnlock()">稍后</button></div>`;
+  const ov = document.getElementById('unlockOverlay');
+  if (ov) ov.classList.add('open');
+}
+function closeUnlock() { const ov = document.getElementById('unlockOverlay'); if (ov) ov.classList.remove('open'); }
