@@ -2,7 +2,14 @@
 
 // ========== 全局状态 ==========
 let currentEtfCode = 'sz159516'; // 默认选中年内涨幅最大的
+let currentKlinePeriod = 'daily'; // 多周期K线当前周期
 let chartInstances = {}; // Chart.js 实例管理
+
+// 多周期K线标签
+const KLINE_PERIOD_LABEL = {
+  daily: '日线', weekly: '周线', monthly: '月线',
+  min60: '60分', min30: '30分', min15: '15分', min5: '5分', min1: '1分'
+};
 
 // ========== 初始化 ==========
 document.addEventListener('DOMContentLoaded', () => {
@@ -12,6 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderPortfolioOverview();
   renderTabBar();
   switchEtf(currentEtfCode);
+  renderDataArchitecture();
 });
 
 // ========== 组合概览 ==========
@@ -212,6 +220,9 @@ function renderEtfDetail(code) {
     </div>
   </div>`;
 
+  // ===== 实时盘口高频数据 (大类1) =====
+  html += getRealtimePanelHtml(code);
+
   // ===== 五维评分 =====
   html += `<div class="section-title"><span class="section-icon">🎯</span><h2>五维评分体系</h2></div>`;
   html += `<div class="dimension-scores">`;
@@ -267,8 +278,13 @@ function renderEtfDetail(code) {
     </div>
   </div>`;
 
-  // ===== K线图表 =====
-  html += `<div class="section-title"><span class="section-icon">📉</span><h2>K线走势与均线</h2></div>`;
+  // ===== 多周期K线 (大类2: 前复权) =====
+  html += `<div class="section-title"><span class="section-icon">📉</span><h2>多周期K线 (前复权)</h2></div>`;
+  html += `<div class="kline-period-tabs" id="klinePeriodTabs">
+    ${['daily','weekly','monthly','min60','min30','min15','min5','min1'].map(p =>
+      `<button class="kline-period-btn ${p === currentKlinePeriod ? 'active' : ''}" data-period="${p}" onclick="switchKlinePeriod('${p}')">${KLINE_PERIOD_LABEL[p]}</button>`
+    ).join('')}
+  </div>`;
   html += `<div class="chart-section">
     <div class="chart-container">
       <canvas id="klineChart"></canvas>
@@ -364,6 +380,12 @@ function renderEtfDetail(code) {
     </div>
   </div>`;
 
+  // ===== ETF专属基本面资金 (大类3) =====
+  html += getEtfSpecificHtml(code);
+
+  // ===== 宏观&板块对照 (大类4) =====
+  html += getMacroSectorHtml(code);
+
   // ===== 消息面 =====
   html += `<div class="section-title"><span class="section-icon">📰</span><h2>消息面</h2></div>`;
   html += `<div class="analysis-card">
@@ -419,17 +441,17 @@ function renderEtfDetail(code) {
 
 // ========== 图表渲染 ==========
 
-function renderKlineChart(code) {
-  const kline = KLINE_DATA[code];
+function renderKlineChart(code, period = currentKlinePeriod) {
+  const kline = KLINE_MULTI[code][period];
   const ma5 = TechnicalEngine.calculateMA(kline, 5);
   const ma10 = TechnicalEngine.calculateMA(kline, 10);
   const ma20 = TechnicalEngine.calculateMA(kline, 20);
   const ma60 = TechnicalEngine.calculateMA(kline, 60);
 
-  // 只展示最近60天
-  const showDays = 60;
+  // 展示数量: 日线/周线/月线取最近60, 分钟线取全部
+  const showDays = (period === 'daily' || period === 'weekly' || period === 'monthly') ? 60 : kline.length;
   const startIdx = Math.max(0, kline.length - showDays);
-  const dates = kline.slice(startIdx).map(d => d.date.slice(5)); // MM-DD格式
+  const dates = kline.slice(startIdx).map(d => (d.date ? d.date.slice(5) : (d.ts ? d.ts.slice(5) : '')));
   const closes = kline.slice(startIdx).map(d => d.close);
 
   const ctx = document.getElementById('klineChart');
@@ -719,6 +741,151 @@ function renderFundFlowChart(code) {
       }
     }
   });
+}
+
+// ========== 大类数据面板渲染 ==========
+
+// 大类1: 实时盘口高频
+function getRealtimePanelHtml(code) {
+  const ob = ORDER_BOOK[code];
+  const iopv = IOPV_DATA[code];
+  const tick = TICK_DATA[code];
+  const q = QUOTE_DATA[code];
+
+  let asksHtml = ob.asks.slice().reverse().map((a, i) => `
+    <tr><td class="ob-level">卖${5 - i}</td><td class="ob-price down">${a.price.toFixed(3)}</td><td class="ob-vol">${a.vol.toLocaleString()}</td></tr>`).join('');
+  let bidsHtml = ob.bids.map((b, i) => `
+    <tr><td class="ob-level">买${i + 1}</td><td class="ob-price up">${b.price.toFixed(3)}</td><td class="ob-vol">${b.vol.toLocaleString()}</td></tr>`).join('');
+
+  const arbCls = iopv.arbitrageSpace ? 'arb-yes' : 'arb-no';
+  const arbText = iopv.arbitrageSpace ? '有套利空间' : '无套利空间';
+
+  return `<div class="realtime-grid">
+    <div class="realtime-card order-book-card">
+      <div class="panel-title">📊 Level-1 五档盘口 <span class="realtime-badge">实时需后端源</span></div>
+      <table class="order-book-table">
+        <thead><tr><th>档位</th><th>价格</th><th>挂单量</th></tr></thead>
+        <tbody>${asksHtml}</tbody>
+        <tbody><tr class="ob-now"><td>现价</td><td class="ob-price" style="font-weight:700">${q.price.toFixed(3)}</td><td class="ob-vol">${q.volume.toLocaleString()}</td></tr></tbody>
+        <tbody>${bidsHtml}</tbody>
+      </table>
+      <div class="ob-meta">量比 ${ob.volumeRatio} · 振幅 ${ob.amplitude}% · 换手 ${ob.turnoverRate}% · 外盘 ${ob.externalVol.toLocaleString()} / 内盘 ${ob.internalVol.toLocaleString()}</div>
+    </div>
+    <div class="realtime-card iopv-card">
+      <div class="panel-title">💎 IOPV 实时净值 <span class="realtime-badge">实时需后端源</span></div>
+      <div class="iopv-main">
+        <div class="iopv-row"><span>基金净值(IOPV)</span><b>${iopv.iopv.toFixed(4)}</b></div>
+        <div class="iopv-row"><span>单位净值(NAV)</span><b>${iopv.nav.toFixed(4)}</b></div>
+        <div class="iopv-row"><span>折溢价率</span><b style="color:${iopv.premiumRate >= 0 ? 'var(--color-up)' : 'var(--color-down)'}">${iopv.premiumRate >= 0 ? '+' : ''}${iopv.premiumRate}%</b></div>
+        <div class="iopv-row"><span>偏离幅度</span><b>${iopv.premiumDeviation}%</b></div>
+      </div>
+      <div class="iopv-arb ${arbCls}">${arbText}${iopv.arbitrageSpace ? ` (|${iopv.premiumDeviation}|% > 0.5%)` : ''}</div>
+    </div>
+    <div class="realtime-card tick-card">
+      <div class="panel-title">⚡ 分时逐笔成交 <span class="realtime-badge">实时需后端源</span></div>
+      <div class="tick-row"><span>主动买入</span><b class="up">${tick.activeBuy}亿</b></div>
+      <div class="tick-row"><span>主动卖出</span><b class="down">${tick.activeSell}亿</b></div>
+      <div class="tick-row"><span>主力净流入</span><b style="color:${tick.netInflow >= 0 ? 'var(--color-up)' : 'var(--color-down)'}">${tick.netInflow >= 0 ? '+' : ''}${tick.netInflow}亿</b></div>
+      <div class="tick-row"><span>估算成交笔数</span><b>${tick.tradeCount.toLocaleString()}</b></div>
+    </div>
+  </div>`;
+}
+
+// 大类3: ETF专属基本面资金
+function getEtfSpecificHtml(code) {
+  const s = ETF_SPECIFIC[code];
+  const pcfHtml = s.pcf.slice(0, 5).map(([name, w]) => `<div class="pcf-item"><span>${name}</span><span class="pcf-weight">${w}%</span></div>`).join('');
+  return `<div class="section-title"><span class="section-icon">🏦</span><h2>ETF专属基本面 & 资金 (套利/规模指标)</h2></div>
+  <div class="etf-specific-grid">
+    <div class="es-card">
+      <div class="es-label">总份额</div><div class="es-value">${s.totalShares}亿份</div>
+      <div class="es-label">流通份额</div><div class="es-value">${s.circulationShares}亿份</div>
+      <div class="es-label">份额变动</div><div class="es-value" style="color:${s.shareChangePct >= 0 ? 'var(--color-up)' : 'var(--color-down)'}">${s.shareChangePct >= 0 ? '+' : ''}${s.shareChangePct}%</div>
+    </div>
+    <div class="es-card">
+      <div class="es-label">折溢价率</div><div class="es-value" style="color:${s.premiumRate >= 0 ? 'var(--color-up)' : 'var(--color-down)'}">${s.premiumRate >= 0 ? '+' : ''}${s.premiumRate}%</div>
+      <div class="es-label">偏离幅度</div><div class="es-value">${s.premiumDeviation}%</div>
+      <div class="es-label">融资余额</div><div class="es-value">${s.marginBalance}亿</div>
+      <div class="es-label">融券余量</div><div class="es-value">${s.marginLending}亿</div>
+    </div>
+    <div class="es-card pcf-card">
+      <div class="es-label" style="grid-column:1/-1">PCF申赎清单 (成分股权重 Top5)</div>
+      ${pcfHtml}
+    </div>
+    <div class="es-card">
+      <div class="es-label">跟踪标的指数</div><div class="es-value">${s.trackingIndex.name}</div>
+      <div class="es-label">指数代码</div><div class="es-value">${s.trackingIndex.code}</div>
+      <div class="es-label">指数涨跌</div><div class="es-value" style="color:${s.trackingIndex.changePct >= 0 ? 'var(--color-up)' : 'var(--color-down)'}">${s.trackingIndex.changePct >= 0 ? '+' : ''}${s.trackingIndex.changePct}%</div>
+    </div>
+  </div>`;
+}
+
+// 大类4: 宏观&板块对照
+function getMacroSectorHtml(code) {
+  const m = MACRO_SECTOR;
+  const sec = m.sector[code];
+  const b = m.benchmark;
+  const senti = m.sentiment;
+  const cat = m.macroCatalyst.map(c => `<li><span class="news-date">${c.date}</span><span class="news-impact ${c.impact === '正面' ? 'positive' : c.impact === '负面' ? 'negative' : 'neutral'}">${c.impact}</span><span class="news-title">${c.item}</span></li>`).join('');
+  return `<div class="section-title"><span class="section-icon">🌐</span><h2>宏观 & 板块对照</h2></div>
+  <div class="macro-grid">
+    <div class="macro-card">
+      <div class="panel-title">行业板块</div>
+      <div class="tick-row"><span>${sec.name}</span><b style="color:${sec.changePct >= 0 ? 'var(--color-up)' : 'var(--color-down)'}">${sec.changePct >= 0 ? '+' : ''}${sec.changePct}%</b></div>
+      <div class="tick-row"><span>板块成交额</span><b>${sec.turnover}亿</b></div>
+      <div class="tick-row"><span>板块资金流</span><b style="color:${sec.fundFlow >= 0 ? 'var(--color-up)' : 'var(--color-down)'}">${sec.fundFlow >= 0 ? '+' : ''}${sec.fundFlow}亿</b></div>
+    </div>
+    <div class="macro-card">
+      <div class="panel-title">宽基基准</div>
+      ${Object.values(b).map(x => `<div class="tick-row"><span>${x.name}</span><b style="color:${x.changePct >= 0 ? 'var(--color-up)' : 'var(--color-down)'}">${x.changePct >= 0 ? '+' : ''}${x.changePct}%</b></div>`).join('')}
+    </div>
+    <div class="macro-card">
+      <div class="panel-title">大盘情绪</div>
+      <div class="tick-row"><span>两市成交额</span><b>${senti.totalTurnover}亿</b></div>
+      <div class="tick-row"><span>涨跌家数</span><b><span class="up">${senti.upCount}</span> / <span class="down">${senti.downCount}</span></b></div>
+      <div class="tick-row"><span>涨跌停</span><b>↑${senti.limitUp} ↓${senti.limitDown}</b></div>
+    </div>
+    <div class="macro-card catalyst-card">
+      <div class="panel-title">行业宏观催化</div>
+      <ul class="news-list" style="padding:0">${cat}</ul>
+    </div>
+  </div>`;
+}
+
+// 多周期K线切换
+function switchKlinePeriod(period) {
+  currentKlinePeriod = period;
+  document.querySelectorAll('.kline-period-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.period === period);
+  });
+  if (chartInstances.kline) { chartInstances.kline.destroy(); delete chartInstances.kline; }
+  renderKlineChart(currentEtfCode, period);
+}
+
+// 数据架构 & 更新节奏 (全局)
+function renderDataArchitecture() {
+  const container = document.getElementById('dataArchitecture');
+  if (!container) return;
+  const cats = [
+    { n: '1. 实时盘口高频', items: ['Level-1五档盘口', 'IOPV实时净值', '分时逐笔成交', '1分钟K线快照'] },
+    { n: '2. 多周期历史K线', items: ['5/15/30/60分钟(前复权)', '日/周/月线(前复权)', 'OHLC+成交量+额', '回测/训练基底'] },
+    { n: '3. ETF专属基本面资金', items: ['总/流通份额', 'PCF申赎清单', '折溢价率/偏离', '融资余额/融券余量', '跟踪指数行情'] },
+    { n: '4. 宏观&板块对照', items: ['行业板块涨跌/资金流', '宽基基准', '大盘情绪指标', '行业宏观催化'] }
+  ];
+  let html = `<div class="section-title"><span class="section-icon">🗂️</span><h2>数据架构 v2.0 — 4大类数据 + 5档更新节奏</h2></div>`;
+  html += `<div class="arch-cat-grid">${cats.map(c => `<div class="arch-cat-card"><div class="arch-cat-title">${c.n}</div><ul>${c.items.map(i => `<li>${i}</li>`).join('')}</ul></div>`).join('')}</div>`;
+  html += `<div class="arch-sched-title">5档更新节奏</div><div class="arch-sched">`;
+  UPDATE_SCHEDULE.forEach(s => {
+    html += `<div class="arch-sched-card">
+      <div class="arch-sched-head"><span class="arch-sched-cadence">${s.cadence}</span><span class="arch-sched-window">${s.window}</span></div>
+      <div class="arch-sched-freq">${s.freq}</div>
+      <div class="arch-sched-items"><b>采集项:</b> ${s.items.join('、')}</div>
+      <div class="arch-sched-method"><b>方式:</b> ${s.method}</div>
+      <div class="arch-sched-source"><b>数据源:</b> ${s.source}</div>
+    </div>`;
+  });
+  html += `</div>`;
+  container.innerHTML = html;
 }
 
 // ========== 工具函数 ==========
